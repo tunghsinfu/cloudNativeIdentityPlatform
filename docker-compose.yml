@@ -4,6 +4,11 @@ services:
     container_name: spring-demo
     ports:
       - "8080:8080"
+    environment:
+      - APP_ENV=${APP_ENV}
+      - APP_VERSION=${APP_VERSION}
+    secrets:
+      - db_password
     restart: unless-stopped
     networks:
       - demo-net
@@ -18,6 +23,10 @@ services:
     restart: unless-stopped
     networks:
       - demo-net
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
 
 networks:
   demo-net:
