@@ -5,6 +5,7 @@
 | 服務 | 角色 | 技術 |
 |------|------|------|
 | **app** | 後端 API | Spring Boot 3.3.5 / Java 21 |
+| **auth** | 認證服務 | Spring Boot 3.3.5 / JWT |
 | **nginx** | API Gateway | Nginx (Alpine) |
 | **postgres** | 資料庫 | PostgreSQL 16 Alpine |
 | **redis** | 快取 / Token 黑名單 | Redis 7 Alpine |
@@ -15,17 +16,12 @@
 
 ```
 /workspace/
-├── spring-boot-demo/       # 微服務 A：Spring Boot 後端
-│   ├── Dockerfile
-│   ├── pom.xml
-│   └── src/
-├── nginx/                  # 微服務 B：Nginx API Gateway
-│   ├── Dockerfile
-│   ├── nginx.conf
-│   └── index.html
+├── spring-boot-demo/       # 後端 API（Spring Boot）
+├── auth-service/           # 認證服務（Spring Boot + JWT）
+├── nginx/                  # API Gateway（Nginx）
 ├── secrets/                # Docker Secrets（已加入 .gitignore）
 ├── .env                    # 環境變數（已加入 .gitignore）
-├── docker-compose.yml      # 容器編排（含 PostgreSQL + Redis）
+├── docker-compose.yml      # 容器編排
 └── README.md               # 本筆記
 ```
 
@@ -55,14 +51,14 @@ docker compose down
 ## 架構說明
 
 ```
-瀏覽器 → Nginx (port 80) → Spring Boot (port 8080)
-         └── /api/* 代理到後端
-         └── /* 靜態檔案
+瀏覽器 → Nginx (port 80) → /api/*  → app:8080（Spring Boot API）
+                          → /auth/* → auth:8081（JWT 認證服務）
+                          → /*      靜態頁面
 ```
 
-- Nginx 監聽 80 埠，提供靜態頁面（`index.html`）
-- 路徑 `/api/` 反向代理至 Spring Boot 後端（service name: `app`）
-- Spring Boot 提供 REST API 於 `http://app:8080/`
+- Nginx 監聽 80 埠，提供靜態頁面
+- `/api/` 反向代理至 Spring Boot demo（`app:8080`）
+- `/auth/` 反向代理至 auth-service（`auth:8081`）
 
 ---
 
@@ -174,18 +170,79 @@ curl http://localhost:8080/db-check
 
 ---
 
+## Auth Service — JWT 認證
+
+### API 端點
+
+| 方法 | 路徑 | 說明 |
+|------|------|------|
+| POST | `/auth/register` | 註冊（username + password） |
+| POST | `/auth/login` | 登入，回傳 JWT Token |
+| GET | `/auth/verify` | 驗證 Token（Bearer header） |
+| POST | `/auth/logout` | 登出，Token 加入 Redis 黑名單 |
+| GET | `/auth/health` | 健康檢查 |
+
+### 使用範例
+
+```bash
+# 註冊
+curl -X POST "http://localhost/auth/register?username=alice&password=123456"
+
+# 登入（取得 token）
+TOKEN=$(curl -s -X POST "http://localhost/auth/login?username=alice&password=123456" \
+  | jq -r '.token')
+
+# 驗證 token
+curl -H "Authorization: Bearer $TOKEN" http://localhost/auth/verify
+
+# 登出（token 列入黑名單）
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost/auth/logout
+
+# 登出後再次驗證（應失敗）
+curl -H "Authorization: Bearer $TOKEN" http://localhost/auth/verify
+```
+
+### JWT 實作
+
+- 使用 `io.jsonwebtoken` (jjwt) 0.12.6 函式庫
+- Token 存於 Redis 黑名單實現登出（`blacklist:<token>`）
+- JWT Secret 從 `.env` 的 `JWT_SECRET` 注入
+
+### Nginx 路由
+
+```nginx
+location /auth/ {
+    proxy_pass http://auth:8081;
+}
+```
+
+---
+
 ## 各服務說明
 
 ### spring-boot-demo
 
-- Spring Boot 3.3.5 + spring-boot-starter-web
+- Spring Boot 3.3.5 + spring-boot-starter-web + JDBC + Redis
 - 提供 `GET /` 回傳 "Hello from Spring Boot!"
+- 提供 `GET /config` 顯示環境變數與 Secrets
+- 提供 `GET /db-check` 測試 PostgreSQL 與 Redis 連線
 - Dockerfile 使用多階段構建（Maven build → JRE runtime）
+
+### auth-service
+
+- Spring Boot 3.3.5 + spring-boot-starter-web + JDBC + Redis + jjwt
+- 提供 JWT 認證 API（註冊 / 登入 / 驗證 / 登出）
+- 使用者資料儲存於 PostgreSQL（users table）
+- Token 黑名單儲存於 Redis
+- Dockerfile 使用多階段構建
 
 ### nginx
 
 - 基於 `nginx:alpine` 輕量映像
 - 自訂 `nginx.conf` 設定反向代理規則
+  - `/` → 靜態頁面
+  - `/api/` → Spring Boot demo (`app:8080`)
+  - `/auth/` → Auth service (`auth:8081`)
 - `index.html` 含前端 JavaScript 呼叫後端 API 並顯示狀態
 
 ---
@@ -194,15 +251,17 @@ curl http://localhost:8080/db-check
 
 ```bash
 $ git log --oneline
+a1e6896 feat: 建立 auth-service（Spring Boot + JWT），含註冊/登入/驗證/登出 API
+322e470 docs: README 新增 PostgreSQL + Redis 基礎設施章節
 b56d6e5 feat: 新增 /db-check 端點，驗證 PostgreSQL 與 Redis 連線狀態
 7d0e2a4 feat: pom.xml 加入 JDBC + PostgreSQL + Redis 依賴；設定資料源與 Redis 連線參數
 c5ba18b feat: docker-compose 加入 PostgreSQL 16 + Redis 7 基礎設施服務
-2ef3158 docs: README 新增環境變數與 secrets 實作章節，記錄 .env 與 Docker Secret 操作方式
-7c0bd00 feat: Spring Boot 新增 /config 端點，讀取環境變數與 Docker secrets；Nginx 前端同步顯示
-2e8e815 feat: app 服務加入 environment（.env 載入）與 secrets（db_password 檔案掛載）
-efbfc9b feat: 建立 .env 環境變數檔、secrets 目錄與 .gitignore（敏感資料排除版控）
+2ef3158 docs: README 新增環境變數與 secrets 實作章節
+7c0bd00 feat: Spring Boot 新增 /config 端點，讀取環境變數與 Docker secrets
+2e8e815 feat: app 服務加入 environment 與 secrets
+efbfc9b feat: 建立 .env 環境變數檔、secrets 目錄與 .gitignore
 0a83e36 docs: 建立根目錄 README.md，記錄微服務 Demo 架構與操作方式
-e9228cd feat: 建立根目錄 docker-compose.yml，整合 Spring Boot + Nginx 微服務架構
-6a028e1 feat: 建立 Nginx 反向代理服務（nginx/）作為 API Gateway
-5b1e309 feat: 建立 Spring Boot Maven 專案（spring-boot-demo）作為微服務 A
+e9228cd feat: 建立根目錄 docker-compose.yml
+6a028e1 feat: 建立 Nginx 反向代理服務
+5b1e309 feat: 建立 Spring Boot Maven 專案（spring-boot-demo）
 ```
