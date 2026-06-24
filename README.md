@@ -83,13 +83,24 @@ environment:
 
 ### Docker Secrets
 
-敏感資料（如資料庫密碼）以 Docker Secret 方式管理：
+敏感資料（如資料庫密碼）以 Docker Secret 方式管理，**不寫入 docker-compose.yml 明碼**：
 
-| 檔案 | 容器內路徑 |
-|------|-----------|
-| `./secrets/db_password.txt` | `/run/secrets/db_password` |
+| 檔案 | 容器內路徑 | 用途 |
+|------|-----------|------|
+| `./secrets/db_password.txt` | `/run/secrets/db_password` | Demo 用密碼 |
+| `./secrets/postgres_password.txt` | `/run/secrets/postgres_password` | PostgreSQL 密碼 |
 
-Spring Boot 可透過讀取該檔案取得密碼：
+密碼透過 entrypoint 腳本自動讀取並設為環境變數：
+
+```bash
+# entrypoint.sh
+if [ -f /run/secrets/postgres_password ]; then
+    export POSTGRES_PASSWORD=$(cat /run/secrets/postgres_password)
+fi
+exec java -jar app.jar
+```
+
+Spring Boot 另可透過直接讀取檔案取得密碼：
 
 ```java
 Path secretPath = Path.of("/run/secrets/db_password");
@@ -251,6 +262,7 @@ location /auth/ {
 
 ```bash
 $ git log --oneline
+3dddcb1 fix: 移除 docker-compose 明碼密碼，改由 entrypoint 腳本從 Docker Secret 讀取
 a1e6896 feat: 建立 auth-service（Spring Boot + JWT），含註冊/登入/驗證/登出 API
 322e470 docs: README 新增 PostgreSQL + Redis 基礎設施章節
 b56d6e5 feat: 新增 /db-check 端點，驗證 PostgreSQL 與 Redis 連線狀態
