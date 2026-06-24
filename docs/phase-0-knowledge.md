@@ -326,7 +326,115 @@ JWT_SECRET=ZGV2LXNlY3JldC...
 
 → 立即 rotate 所有密碼。從 git history 移除（`git filter-branch`），但已 clone 的 repo 無法強制回收，所以密碼仍視為洩漏。
 
-### 6.4 環境區隔
+### 6.4 變數預設值：`${VAR:-default}`
+
+Docker Compose 支援 Shell 風格的變數預設值語法：
+
+```yaml
+environment:
+  - LOG_LEVEL=${LOG_LEVEL:-INFO}       # 如果 LOG_LEVEL 未設定或空值，使用 INFO
+  - CACHE_TTL=${APP_CACHE_TTL:-300}    # 各服務可設定不同的預設值
+```
+
+`${VAR:-default}` 與 `${VAR-default}` 的差異：
+
+| 語法 | VAR 未設定 | VAR 為空字串 |
+|------|-----------|-------------|
+| `${VAR:-default}` | 使用 default | 使用 default |
+| `${VAR-default}` | 使用 default | 使用空字串 |
+
+**面試重點**：為什麼需要預設值？
+
+→ 提供合理的開發體驗（不強制要求所有變數都要設定），同時讓生產環境可以透過真實值覆蓋。
+
+### 6.5 不同服務給予不同環境參數值
+
+同一個 `.env` 可以為不同服務定義不同的參數值，藉由變數名稱區隔：
+
+```bash
+# .env
+APP_CACHE_TTL=300       # app 服務用
+AUTH_CACHE_TTL=60       # auth 服務用
+```
+
+```yaml
+# docker-compose.yml
+services:
+  app:
+    environment:
+      - CACHE_TTL=${APP_CACHE_TTL:-300}
+
+  auth:
+    environment:
+      - CACHE_TTL=${AUTH_CACHE_TTL:-60}
+```
+
+結果：
+
+| 服務 | CACHE_TTL 值 | 來源 |
+|------|-------------|------|
+| app | 300 | `.env` 的 `APP_CACHE_TTL` |
+| auth | 60 | `.env` 的 `AUTH_CACHE_TTL` |
+
+**如果刪除 `.env` 中的變數**，則各自 fallback 到不同的預設值（app=300, auth=60）。
+
+### 6.6 Dockerfile ARG + ENV（Build-time vs Runtime）
+
+```dockerfile
+# Dockerfile
+ARG APP_NAME=unknown           # build-time 參數，可被 --build-arg 覆寫
+ENV APP_NAME=${APP_NAME}       # 將 build arg 轉為 runtime 環境變數
+```
+
+```yaml
+# docker-compose.yml
+services:
+  app:
+    build:
+      context: ./spring-boot-demo
+      args:
+        APP_NAME: spring-demo-backend    # 覆寫 Dockerfile 的 ARG 預設值
+
+  auth:
+    build:
+      context: ./auth-service
+      args:
+        APP_NAME: auth-service-jwt       # 不同服務傳入不同的值
+```
+
+**ARG vs ENV 差異**：
+
+| | ARG | ENV |
+|---|-----|-----|
+| 可用階段 | build-time only | build + run |
+| 可覆寫 | Dockerfile / compose `args` | compose `environment` |
+| 存活範圍 | `docker build` 過程 | container 整個生命週期 |
+| 典型用途 | 版本號、映像標籤 | 應用程式設定 |
+
+**轉換模式 `ARG → ENV`** 讓 build-time 參數延續到 runtime。
+
+### 6.7 Spring Boot 層級覆寫
+
+```properties
+# application.properties
+spring.application.name=${APP_NAME:demo}
+logging.level.root=${LOG_LEVEL:INFO}
+```
+
+Spring Boot 解析 `${APP_NAME:demo}`：
+1. 先查 Environment（環境變數）
+2. 未設定則使用 `demo`
+3. 環境變數 `APP_NAME` 來自 Dockerfile 的 `ENV APP_NAME=${APP_NAME}`
+
+完整鏈：
+
+```
+docker-compose args → Dockerfile ARG → ENV → container env → Spring Environment
+```
+
+---
+
+### 6.8 環境區隔
 
 ```bash
 # .env.development
