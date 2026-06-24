@@ -9,9 +9,7 @@ services:
       - APP_VERSION=${APP_VERSION}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
-    secrets:
-      - db_password
-      - postgres_password
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy
@@ -29,9 +27,8 @@ services:
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - JWT_SECRET=${JWT_SECRET}
-    secrets:
-      - postgres_password
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,9 +56,7 @@ services:
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
-    secrets:
-      - postgres_password
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     healthcheck:
@@ -88,12 +83,6 @@ services:
     restart: unless-stopped
     networks:
       - demo-net
-
-secrets:
-  db_password:
-    file: ./secrets/db_password.txt
-  postgres_password:
-    file: ./secrets/postgres_password.txt
 
 volumes:
   pgdata:
