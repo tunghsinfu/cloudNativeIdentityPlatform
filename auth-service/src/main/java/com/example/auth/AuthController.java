@@ -2,6 +2,7 @@ package com.example.auth;
 
 import java.util.Map;
 
+import org.springframework.core.env.Environment;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,11 +16,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/auth")
 public class AuthController {
 
+    private final Environment env;
     private final JdbcTemplate jdbc;
     private final StringRedisTemplate redis;
     private final JwtUtil jwt;
 
-    public AuthController(JdbcTemplate jdbc, StringRedisTemplate redis, JwtUtil jwt) {
+    public AuthController(Environment env, JdbcTemplate jdbc, StringRedisTemplate redis, JwtUtil jwt) {
+        this.env = env;
         this.jdbc = jdbc;
         this.redis = redis;
         this.jwt = jwt;
@@ -92,6 +95,12 @@ public class AuthController {
             redis.opsForValue().set("auth-ping", "pong");
             r = "OK";
         } catch (Exception e) { r = e.getMessage(); }
-        return Map.of("service", "auth-service", "postgresql", pg, "redis", r);
+        return Map.ofEntries(
+            Map.entry("service", env.getProperty("spring.application.name", "unknown")),
+            Map.entry("postgresql", pg),
+            Map.entry("redis", r),
+            Map.entry("LOG_LEVEL", env.getProperty("LOG_LEVEL", "undefined")),
+            Map.entry("CACHE_TTL", env.getProperty("CACHE_TTL", "undefined"))
+        );
     }
 }

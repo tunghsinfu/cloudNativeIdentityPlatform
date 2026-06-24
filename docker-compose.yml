@@ -1,12 +1,17 @@
 services:
   app:
-    build: ./spring-boot-demo
+    build:
+      context: ./spring-boot-demo
+      args:
+        APP_NAME: spring-demo-backend
     container_name: spring-demo
     ports:
-      - "8080:8080"
+      - "${SERVER_PORT_APP:-8080}:8080"
     environment:
       - APP_ENV=${APP_ENV}
       - APP_VERSION=${APP_VERSION}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CACHE_TTL=${APP_CACHE_TTL:-300}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -20,11 +25,16 @@ services:
       - demo-net
 
   auth:
-    build: ./auth-service
+    build:
+      context: ./auth-service
+      args:
+        APP_NAME: auth-service-jwt
     container_name: auth-service
     ports:
-      - "8081:8081"
+      - "${SERVER_PORT_AUTH:-8081}:8081"
     environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CACHE_TTL=${AUTH_CACHE_TTL:-60}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}

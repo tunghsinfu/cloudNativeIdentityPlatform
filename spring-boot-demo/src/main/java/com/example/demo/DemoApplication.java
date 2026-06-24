@@ -35,10 +35,20 @@ public class DemoApplication {
 
     @GetMapping("/config")
     public Map<String, Object> config() {
-        return Map.of(
-            "APP_ENV", env.getProperty("APP_ENV", "undefined"),
-            "APP_VERSION", env.getProperty("APP_VERSION", "undefined")
+        return Map.ofEntries(
+            Map.entry("service", env.getProperty("spring.application.name", "unknown")),
+            Map.entry("APP_ENV", env.getProperty("APP_ENV", "undefined")),
+            Map.entry("APP_VERSION", env.getProperty("APP_VERSION", "undefined")),
+            Map.entry("LOG_LEVEL", env.getProperty("LOG_LEVEL", "undefined")),
+            Map.entry("CACHE_TTL", env.getProperty("CACHE_TTL", "undefined")),
+            Map.entry("cache_ttl_source", isEnvSet("APP_CACHE_TTL")
+                ? "from .env (APP_CACHE_TTL)" : "from docker-compose default")
         );
+    }
+
+    private boolean isEnvSet(String key) {
+        String val = env.getProperty(key);
+        return val != null && !val.isEmpty();
     }
 
     @GetMapping("/db-check")

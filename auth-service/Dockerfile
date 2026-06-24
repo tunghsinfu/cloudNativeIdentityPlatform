@@ -8,6 +8,10 @@ RUN mvn clean package -DskipTests
 
 # Stage 2: Run
 FROM eclipse-temurin:21-jre-alpine
+
+ARG APP_NAME=unknown
+ENV APP_NAME=${APP_NAME}
+
 WORKDIR /app
 COPY --from=builder /app/target/*.jar app.jar
 EXPOSE 8081
