@@ -6,6 +6,8 @@
 |------|------|------|
 | **app** | 後端 API | Spring Boot 3.3.5 / Java 21 |
 | **nginx** | API Gateway | Nginx (Alpine) |
+| **postgres** | 資料庫 | PostgreSQL 16 Alpine |
+| **redis** | 快取 / Token 黑名單 | Redis 7 Alpine |
 
 ---
 
@@ -21,7 +23,9 @@
 │   ├── Dockerfile
 │   ├── nginx.conf
 │   └── index.html
-├── docker-compose.yml      # 容器編排
+├── secrets/                # Docker Secrets（已加入 .gitignore）
+├── .env                    # 環境變數（已加入 .gitignore）
+├── docker-compose.yml      # 容器編排（含 PostgreSQL + Redis）
 └── README.md               # 本筆記
 ```
 
@@ -122,6 +126,54 @@ curl http://localhost/api/config   # 經 Nginx
 
 ---
 
+## PostgreSQL + Redis 基礎設施
+
+### docker-compose 配置
+
+```yaml
+postgres:
+  image: postgres:16-alpine
+  environment:
+    - POSTGRES_DB=${POSTGRES_DB}
+    - POSTGRES_USER=${POSTGRES_USER}
+    - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+  secrets:
+    - postgres_password
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+  volumes:
+    - pgdata:/var/lib/postgresql/data
+
+redis:
+  image: redis:7-alpine
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+```
+
+- PostgreSQL 密碼透過 Docker Secret 注入（`POSTGRES_PASSWORD_FILE`）
+- Redis 無須密碼（開發環境），直接以 `redis-cli ping` 做健康檢查
+
+### Spring Boot 連線設定 (`application.properties`)
+
+```properties
+spring.datasource.url=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+spring.datasource.username=${POSTGRES_USER}
+spring.datasource.password=${POSTGRES_PASSWORD}
+spring.data.redis.host=redis
+spring.data.redis.port=6379
+```
+
+### 連線驗證端點 `/db-check`
+
+Spring Boot 使用 `JdbcTemplate` 查詢 `SELECT 1` 驗證 PG 連線，並用 `StringRedisTemplate` 執行 `SET/GET` 驗證 Redis：
+
+```bash
+curl http://localhost:8080/db-check
+# {"postgresql":"OK","redis":"OK (ping=pong)"}
+```
+
+---
+
 ## 各服務說明
 
 ### spring-boot-demo
@@ -142,9 +194,14 @@ curl http://localhost/api/config   # 經 Nginx
 
 ```bash
 $ git log --oneline
+b56d6e5 feat: 新增 /db-check 端點，驗證 PostgreSQL 與 Redis 連線狀態
+7d0e2a4 feat: pom.xml 加入 JDBC + PostgreSQL + Redis 依賴；設定資料源與 Redis 連線參數
+c5ba18b feat: docker-compose 加入 PostgreSQL 16 + Redis 7 基礎設施服務
+2ef3158 docs: README 新增環境變數與 secrets 實作章節，記錄 .env 與 Docker Secret 操作方式
 7c0bd00 feat: Spring Boot 新增 /config 端點，讀取環境變數與 Docker secrets；Nginx 前端同步顯示
 2e8e815 feat: app 服務加入 environment（.env 載入）與 secrets（db_password 檔案掛載）
 efbfc9b feat: 建立 .env 環境變數檔、secrets 目錄與 .gitignore（敏感資料排除版控）
+0a83e36 docs: 建立根目錄 README.md，記錄微服務 Demo 架構與操作方式
 e9228cd feat: 建立根目錄 docker-compose.yml，整合 Spring Boot + Nginx 微服務架構
 6a028e1 feat: 建立 Nginx 反向代理服務（nginx/）作為 API Gateway
 5b1e309 feat: 建立 Spring Boot Maven 專案（spring-boot-demo）作為微服務 A
