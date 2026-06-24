@@ -19,8 +19,7 @@
 ├── spring-boot-demo/       # 後端 API（Spring Boot）
 ├── auth-service/           # 認證服務（Spring Boot + JWT）
 ├── nginx/                  # API Gateway（Nginx）
-├── secrets/                # Docker Secrets（已加入 .gitignore）
-├── .env                    # 環境變數（已加入 .gitignore）
+├── .env                    # 環境變數與機密（已加入 .gitignore）
 ├── docker-compose.yml      # 容器編排
 └── README.md               # 本筆記
 ```
@@ -62,74 +61,40 @@ docker compose down
 
 ---
 
-## 環境變數與 Secrets 實作
+## 環境變數與機密資料管理
 
-### .env 檔案
+### 單一 `.env` 檔案
 
-專案根目錄的 `.env` 檔案由 Docker Compose 自動載入：
+所有環境變數（含密碼）統一放在根目錄的 `.env`，由 Docker Compose 自動載入：
 
 ```bash
 APP_ENV=development
 APP_VERSION=1.0.0
+POSTGRES_DB=authdb
+POSTGRES_USER=authuser
+POSTGRES_PASSWORD=pg_s3cr3t!
+JWT_SECRET=ZGV2LXNlY3JldC1rZXktZm9yLWRlbW8tcHVycG9zZXMtb25seSE=
 ```
 
-這些變數透過 `docker-compose.yml` 的 `environment:` 區段傳入容器：
+### 注入方式
 
 ```yaml
+# docker-compose.yml
 environment:
-  - APP_ENV=${APP_ENV}
-  - APP_VERSION=${APP_VERSION}
+  - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}  # 從 .env 讀取
 ```
 
-### Docker Secrets
+Spring Boot 的 `application.properties` 再從環境變數讀取：
 
-敏感資料（如資料庫密碼）以 Docker Secret 方式管理，**不寫入 docker-compose.yml 明碼**：
-
-| 檔案 | 容器內路徑 | 用途 |
-|------|-----------|------|
-| `./secrets/db_password.txt` | `/run/secrets/db_password` | Demo 用密碼 |
-| `./secrets/postgres_password.txt` | `/run/secrets/postgres_password` | PostgreSQL 密碼 |
-
-密碼透過 entrypoint 腳本自動讀取並設為環境變數：
-
-```bash
-# entrypoint.sh
-if [ -f /run/secrets/postgres_password ]; then
-    export POSTGRES_PASSWORD=$(cat /run/secrets/postgres_password)
-fi
-exec java -jar app.jar
-```
-
-Spring Boot 另可透過直接讀取檔案取得密碼：
-
-```java
-Path secretPath = Path.of("/run/secrets/db_password");
-String password = Files.readString(secretPath).trim();
-```
-
-Spring Boot 提供 `/config` 端點驗證兩者的值：
-
-```bash
-# 檢視環境變數與 secrets
-curl http://localhost:8080/config
-curl http://localhost/api/config   # 經 Nginx
-```
-
-輸出範例：
-
-```json
-{
-  "APP_ENV" : "development",
-  "APP_VERSION" : "1.0.0",
-  "DB_PASSWORD" : "s3cr3t!Passw0rd",
-  "secret_source" : "/run/secrets/db_password"
-}
+```properties
+spring.datasource.password=${POSTGRES_PASSWORD}
 ```
 
 ### 安全注意
 
-- `.env` 與 `secrets/` 已加入 `.gitignore`，避免誤提交
-- 實務上應使用 Docker Swarm Secrets、HashiCorp Vault 或 AWS Secrets Manager
+- `.env` 已加入 `.gitignore`，**不會被提交**到版控
+- 所有機密集中在一個檔案，易於管理與輪替
+- 實務上生產環境建議使用 Docker Swarm Secrets、HashiCorp Vault 或 AWS Secrets Manager
 
 ---
 
@@ -262,18 +227,21 @@ location /auth/ {
 
 ```bash
 $ git log --oneline
-3dddcb1 fix: 移除 docker-compose 明碼密碼，改由 entrypoint 腳本從 Docker Secret 讀取
-a1e6896 feat: 建立 auth-service（Spring Boot + JWT），含註冊/登入/驗證/登出 API
+ef5070a fix: 簡化機密管理，移除 secrets/ 與 entrypoint，統一使用 .env
+3214c9f docs: README 更新 Secrets 章節
+3dddcb1 fix: 移除 docker-compose 明碼密碼，改由 entrypoint 讀取 secret
+a661dc4 docs: README 新增 auth-service JWT 認證章節
+a1e6896 feat: 建立 auth-service（Spring Boot + JWT）
 322e470 docs: README 新增 PostgreSQL + Redis 基礎設施章節
-b56d6e5 feat: 新增 /db-check 端點，驗證 PostgreSQL 與 Redis 連線狀態
-7d0e2a4 feat: pom.xml 加入 JDBC + PostgreSQL + Redis 依賴；設定資料源與 Redis 連線參數
-c5ba18b feat: docker-compose 加入 PostgreSQL 16 + Redis 7 基礎設施服務
+b56d6e5 feat: 新增 /db-check 端點驗證 PG 與 Redis 連線
+7d0e2a4 feat: pom.xml 加入 JDBC + PostgreSQL + Redis 依賴
+c5ba18b feat: docker-compose 加入 PostgreSQL 16 + Redis 7
 2ef3158 docs: README 新增環境變數與 secrets 實作章節
-7c0bd00 feat: Spring Boot 新增 /config 端點，讀取環境變數與 Docker secrets
+7c0bd00 feat: Spring Boot 新增 /config 端點
 2e8e815 feat: app 服務加入 environment 與 secrets
-efbfc9b feat: 建立 .env 環境變數檔、secrets 目錄與 .gitignore
-0a83e36 docs: 建立根目錄 README.md，記錄微服務 Demo 架構與操作方式
+efbfc9b feat: 建立 .env 與 .gitignore
+0a83e36 docs: 建立根目錄 README.md
 e9228cd feat: 建立根目錄 docker-compose.yml
 6a028e1 feat: 建立 Nginx 反向代理服務
-5b1e309 feat: 建立 Spring Boot Maven 專案（spring-boot-demo）
+5b1e309 feat: 建立 Spring Boot Maven 專案
 ```
