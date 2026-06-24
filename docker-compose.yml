@@ -9,9 +9,9 @@ services:
       - APP_VERSION=${APP_VERSION}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=pg_s3cr3t!
     secrets:
       - db_password
+      - postgres_password
     depends_on:
       postgres:
         condition: service_healthy
@@ -29,8 +29,9 @@ services:
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=pg_s3cr3t!
       - JWT_SECRET=${JWT_SECRET}
+    secrets:
+      - postgres_password
     depends_on:
       postgres:
         condition: service_healthy
