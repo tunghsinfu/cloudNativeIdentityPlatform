@@ -62,6 +62,66 @@ docker compose down
 
 ---
 
+## 環境變數與 Secrets 實作
+
+### .env 檔案
+
+專案根目錄的 `.env` 檔案由 Docker Compose 自動載入：
+
+```bash
+APP_ENV=development
+APP_VERSION=1.0.0
+```
+
+這些變數透過 `docker-compose.yml` 的 `environment:` 區段傳入容器：
+
+```yaml
+environment:
+  - APP_ENV=${APP_ENV}
+  - APP_VERSION=${APP_VERSION}
+```
+
+### Docker Secrets
+
+敏感資料（如資料庫密碼）以 Docker Secret 方式管理：
+
+| 檔案 | 容器內路徑 |
+|------|-----------|
+| `./secrets/db_password.txt` | `/run/secrets/db_password` |
+
+Spring Boot 可透過讀取該檔案取得密碼：
+
+```java
+Path secretPath = Path.of("/run/secrets/db_password");
+String password = Files.readString(secretPath).trim();
+```
+
+Spring Boot 提供 `/config` 端點驗證兩者的值：
+
+```bash
+# 檢視環境變數與 secrets
+curl http://localhost:8080/config
+curl http://localhost/api/config   # 經 Nginx
+```
+
+輸出範例：
+
+```json
+{
+  "APP_ENV" : "development",
+  "APP_VERSION" : "1.0.0",
+  "DB_PASSWORD" : "s3cr3t!Passw0rd",
+  "secret_source" : "/run/secrets/db_password"
+}
+```
+
+### 安全注意
+
+- `.env` 與 `secrets/` 已加入 `.gitignore`，避免誤提交
+- 實務上應使用 Docker Swarm Secrets、HashiCorp Vault 或 AWS Secrets Manager
+
+---
+
 ## 各服務說明
 
 ### spring-boot-demo
@@ -82,6 +142,9 @@ docker compose down
 
 ```bash
 $ git log --oneline
+7c0bd00 feat: Spring Boot 新增 /config 端點，讀取環境變數與 Docker secrets；Nginx 前端同步顯示
+2e8e815 feat: app 服務加入 environment（.env 載入）與 secrets（db_password 檔案掛載）
+efbfc9b feat: 建立 .env 環境變數檔、secrets 目錄與 .gitignore（敏感資料排除版控）
 e9228cd feat: 建立根目錄 docker-compose.yml，整合 Spring Boot + Nginx 微服務架構
 6a028e1 feat: 建立 Nginx 反向代理服務（nginx/）作為 API Gateway
 5b1e309 feat: 建立 Spring Boot Maven 專案（spring-boot-demo）作為微服務 A
