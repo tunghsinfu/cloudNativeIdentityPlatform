@@ -15,59 +15,168 @@
 
 ---
 
-## 現狀評估（已完工）
+## 設計原則
 
-以下內容已在 `/workspace` 中完成，合併為 Phase 0：
+### 見林優先，見樹在後
 
-| 步驟 | 內容 | 驗證方式 |
-|------|------|---------|
-| 0.0 | Git repo 初始化 + 目錄結構 | `git log` |
-| 0.1 | `spring-boot-demo/` — 基礎 Spring Boot 3 + Docker | `mvn compile` |
-| 0.2 | `nginx/` — API Gateway（反向代理 `/api/`） | `curl localhost/api/` |
-| 0.3 | `docker-compose.yml` — 整合 app + nginx + postgres + redis | `docker compose up -d` |
-| 0.4 | `.env` + `.gitignore` — 環境變數與機密管理 | `docker compose config` |
-| 0.5 | `GET /config` — 讀取環境變數 | `curl localhost:8080/config` |
-| 0.6 | `GET /db-check` — PostgreSQL + Redis 連線驗證 | `curl localhost:8080/db-check` |
-| 0.7 | `auth-service/` — 基本 JWT 認證（register / login / verify / logout） | `curl localhost/auth/health` |
-| 0.8 | Nginx `/auth/` 路由 → auth-service:8081 | `curl localhost/auth/health` |
+Phase 劃分以「功能主線」為優先，不讓細節阻礙整體進度：
+
+| 層級 | 作用 | 例子 |
+|------|------|------|
+| **Phase** | 一條完整的功能主線 | Auth Service、Redis、Deployment |
+| **子步驟** | 可獨立 build + 驗證的最小單位 | BCrypt、Flyway、Graceful Shutdown |
+| **進階項目** | 面試加分細節（獨立文件） | CDN、gRPC、OAuth2 社交登入 |
+
+進階項目另整理於 `/docs/advanced-topics.md`，不塞入主線避免失焦。
 
 ---
 
-## Phase 1 — 核心強化：企業級 Auth Service（2 週）
+## 現狀評估（Phase 0 — 已完成）
 
-### 1.1 導入 Spring Security
+| 步驟 | 內容 | 驗證方式 |
+|------|------|---------|
+| 0.0 | Git repo + 目錄結構 | `git log` |
+| 0.1 | `spring-boot-demo/` — 基礎 Spring Boot 3 + Maven | `mvn compile` |
+| 0.2 | `nginx/` — API Gateway（反向代理 `/api/`） | `curl localhost/api/` |
+| 0.3 | `docker-compose.yml` — app + nginx + postgres + redis | `docker compose up -d` |
+| 0.4 | `.env` + `.gitignore` — 環境變數與機密管理 | `docker compose config` |
+| 0.5 | `GET /config` — 讀取環境變數 | `curl localhost:8080/config` |
+| 0.6 | `GET /db-check` — PostgreSQL + Redis 驗證 | `curl localhost:8080/db-check` |
+| 0.7 | `auth-service/` — 基本 JWT（register / login / verify / logout） | `curl localhost/auth/health` |
+| 0.8 | Nginx `/auth/` 路由 | `curl localhost/auth/health` |
+| 0.9 | Dockerfile 非 root 使用者 | `docker run --rm demo id` → `appuser` |
+| 0.10 | Spring Boot Layered JAR | `docker build` 觀察 layer cache |
+| 0.11 | Makefile（常用指令捷徑） | `make build` |
 
-將現有 auth-service 的簡易驗證改為 Spring Security 架構：
+---
 
-| # | 步驟 | 說明 | 驗證 |
-|---|------|------|------|
-| 1.1.1 | 加入 `spring-boot-starter-security` 依賴 | pom.xml | `mvn compile` |
-| 1.1.2 | 建立 `SecurityConfig.java` — 設定 permitAll for `/auth/login`, `/auth/register`；其餘需認證 | `@Bean SecurityFilterChain` | 未帶 token 請求 `/auth/verify` → 401 |
-| 1.1.3 | 建立 `JwtAuthenticationFilter.java` — 從 `Authorization` header 解析 token，設定 `SecurityContextHolder` | `OncePerRequestFilter` | 帶有效 token → 200 |
-| 1.1.4 | 建立 `UserDetailsServiceImpl.java` — 從 DB 載入使用者 | `UserDetailsService` | login 正確檢查密碼 |
+## Phase 1 — Auth Service 核心強化（2 週）
 
-**可驗證**：`curl -X POST .../auth/login` → 取得 token；不帶 token 訪問受保護端點 → 401
+將 Phase 0 的簡易 JWT 升級為企業級身份認證服務。
 
-### 1.2 完整 JWT 規範（含 jti + Refresh Token）
-
-| # | 步驟 | 說明 | 驗證 |
-|---|------|------|------|
-| 1.2.1 | JWT claims 加入 `jti`（JWT ID, UUID） | `JwtUtil.java` | decode token 看 payload |
-| 1.2.2 | JWT 加入 `role` claim | `JwtUtil.java` | payload 含 role |
-| 1.2.3 | 實作 Refresh Token — `POST /auth/refresh`，用 refresh token 換新 access token | Refresh token 存 Redis | 舊 token 過期後 refresh 成功 |
-| 1.2.4 | access token 有效期 15 分鐘，refresh token 有效期 7 天 | `application.properties` | 實測過期行為 |
-
-**可驗證**：取得 token → 等 15 分（或設短秒數測試）→ `/auth/refresh` 取得新 token
-
-### 1.3 升級 Logout — Redis Token Blacklist（JWT Stateless 管理）
+### 1.1 Spring Security 導入
 
 | # | 步驟 | 說明 | 驗證 |
 |---|------|------|------|
-| 1.3.1 | Logout 接收 token，解析 `jti` | `AuthController.java` | — |
-| 1.3.2 | 寫入 Redis `blacklist:{jti}`，值為 `"1"`，TTL = token 剩餘時間 | `StringRedisTemplate` | `redis-cli TTL blacklist:{jti}` |
-| 1.3.3 | JwtAuthenticationFilter 檢查 token 是否在黑名單中 | 過濾器流程 | logout 後再次 verify → 401 |
+| 1.1.1 | 加入 `spring-boot-starter-security` | pom.xml | `mvn compile` |
+| 1.1.2 | `SecurityConfig.java` — permit `/auth/login`,`/auth/register`，其餘需認證 | `SecurityFilterChain` | 無 token → 401 |
+| 1.1.3 | `JwtAuthenticationFilter` — 從 header 解析 token，寫入 SecurityContext | `OncePerRequestFilter` | 有效 token → 200 |
+| 1.1.4 | `UserDetailsServiceImpl` — 從 DB 載入使用者 | `UserDetailsService` | login 正確檢查密碼 |
 
-**可驗證**：login → logout → 用同一 token 訪問 → 401
+### 1.2 完整 JWT（jti + Refresh Token）
+
+| # | 步驟 | 驗證 |
+|---|------|------|
+| 1.2.1 | JWT 加入 `jti`（UUID） | decode token 看 payload |
+| 1.2.2 | JWT 加入 `role` claim | payload 含 role |
+| 1.2.3 | `POST /auth/refresh` — refresh token 換新 access token | 舊 token 過期後 refresh 成功 |
+| 1.2.4 | access token 15 分鐘，refresh token 7 天 | 實測過期行為 |
+
+### 1.3 BCrypt 密碼編碼
+
+> 當前問題：auth-service 存明碼密碼，這是 production 不可接受的安全缺失。
+
+| # | 步驟 | 驗證 |
+|---|------|------|
+| 1.3.1 | register 使用 `BCryptPasswordEncoder.encode()` | DB 密碼欄位為 hash 值 |
+| 1.3.2 | login 使用 `BCryptPasswordEncoder.matches()` | 正確密碼可登入，錯誤密碼拒絕 |
+
+### 1.4 Flyway 資料庫遷移（取代 schema.sql）
+
+| # | 步驟 | 說明 |
+|---|------|------|
+| 1.4.1 | 加入 flyway-core 依賴 | pom.xml |
+| 1.4.2 | 移除 `spring.sql.init.*`，改為 `V1__create_users.sql` | schema 版本化 |
+| 1.4.3 | 建立 `V2__add_role_column.sql` 展示版本演化 | `kubectl exec` 連 DB 確認 |
+
+### 1.5 @ControllerAdvice 全域異常處理
+
+| # | 步驟 | 驗證 |
+|---|------|------|
+| 1.5.1 | 建立 `GlobalExceptionHandler` + `ErrorResponse` | 所有錯誤回傳 `{code, message}` 一致格式 |
+| 1.5.2 | 處理驗證失敗、權限不足、500 等情境 | `curl -v` 確認 HTTP status |
+
+### 1.6 API 版本策略
+
+決定採用 URL path 版本（`/auth/v1/login`），在 Controller 層實作。
+
+```
+/auth/v1/register
+/auth/v1/login
+/auth/v1/verify
+/auth/v1/logout
+/auth/v1/refresh
+```
+
+---
+
+## Phase 1.5 — Production Hardening（1 週）
+
+核心功能完成後，加入企業級運行所需的穩定性與安全性設置。**這個 Phase 是區分「demo」與「production-ready」的關鍵。**
+
+### 1.5.1 Graceful Shutdown
+
+```yaml
+# application.properties
+server.shutdown=graceful
+spring.lifecycle.timeout-per-shutdown-phase=30s
+
+# docker-compose.yml
+stop_grace_period: 45s
+```
+
+**驗證**：`docker compose stop` 觀察日誌顯示正在處理中的請求完成後才關閉。
+
+### 1.5.2 HikariCP Connection Pool Tuning
+
+```properties
+spring.datasource.hikari.maximum-pool-size=10
+spring.datasource.hikari.minimum-idle=5
+spring.datasource.hikari.connection-timeout=5000
+spring.datasource.hikari.idle-timeout=300000
+spring.datasource.hikari.max-lifetime=600000
+spring.datasource.hikari.leak-detection-threshold=10000
+```
+
+**驗證**：`/actuator/health` 顯示 DB 連線狀態，`/actuator/metrics` 查看 pool 用量。
+
+### 1.5.3 Docker Resource Limits
+
+```yaml
+services:
+  auth:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+```
+
+**驗證**：`docker stats` 確認上限生效。
+
+### 1.5.4 CORS Configuration
+
+| # | 步驟 | 說明 |
+|---|------|------|
+| 1.5.4.1 | 建立 `CorsConfig.java` | 允許 localhost:3000（React dev server） |
+| 1.5.4.2 | 限定 methods / headers | GET, POST, PUT, DELETE |
+
+### 1.5.5 Actuator（基礎端點）
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+```
+
+```properties
+management.endpoints.web.exposure.include=health,info
+management.endpoint.health.show-details=always
+management.endpoint.health.probes.enabled=true
+```
+
+**驗證**：`curl localhost:8081/actuator/health` 回傳 DB + Redis 狀態。
 
 ---
 
@@ -75,139 +184,141 @@
 
 ### 2.1 Login Rate Limit（防暴力破解）
 
-| # | 步驟 | 說明 | 驗證 |
-|---|------|------|------|
-| 2.1.1 | 登入失敗時 Redis INCR `login_fail:{username}`，TTL 600s | `AuthController` | 5 次錯誤後鎖定 |
-| 2.1.2 | 達到閾值（5 次）回傳 429 Too Many Requests | 自訂 exception | `curl -v` 看 status |
-| 2.1.3 | 登入成功時刪除 `login_fail:{username}` | 解除鎖定 | 鎖定→等 TTL→可再試 |
+| # | 步驟 | 驗證 |
+|---|------|------|
+| 2.1.1 | 登入失敗 Redis INCR `login_fail:{username}`，TTL 600s | 5 次鎖定 |
+| 2.1.2 | 閾值 5 次回傳 429 | `curl -v` 確認 status |
+| 2.1.3 | 登入成功刪除 `login_fail:{username}` | 鎖定→等 TTL→可再試 |
 
-**可驗證**：連續送 6 次錯誤密碼 → 第 6 次回 429
+### 2.2 Cache-Aside Pattern
 
-### 2.2 Cache-Aside Pattern（User Profile Cache）
-
-| # | 步驟 | 說明 | 驗證 |
-|---|------|------|------|
-| 2.2.1 | 查詢使用者時先讀 Redis `user:{id}`，miss 則查 DB 並回寫 cache | `CacheAsideService` | `redis-cli GET user:{id}` 有資料 |
-| 2.2.2 | 更新使用者時 invalidate cache（DEL `user:{id}`） | `@CacheEvict` 或手動 | 更新後 cache 消失 |
-| 2.2.3 | cache TTL 設定（預設 300s） | `application.properties` | TTL 自動過期 |
-
-**可驗證**：第一次查 → 慢（DB）；第二次查 → 快（Redis）；redis-cli 確認 key 存在
+| # | 步驟 | 驗證 |
+|---|------|------|
+| 2.2.1 | 查詢先讀 Redis `user:{id}`，miss 查 DB 回寫 cache | `redis-cli GET user:{id}` |
+| 2.2.2 | 更新時 invalidate cache | 更新後 cache 消失 |
+| 2.2.3 | cache TTL 300s | 自動過期 |
 
 ---
 
-## Phase 3 — User Service + 跨服務架構（1 週）
+## Phase 3 — User Service（1 週）
 
 ### 3.1 建立 user-service
 
-| # | 步驟 | 說明 | 驗證 |
-|---|------|------|------|
-| 3.1.1 | 建立 `user-service/pom.xml` + Dockerfile | port 8082 | `mvn compile` |
-| 3.1.2 | 建立 `schema.sql` — `user_profiles` table（id, username, email, display_name, avatar_url, created_at） | 自動初始化 | 連 PG 查 table |
-| 3.1.3 | 建立 `UserController` — `GET /user/profile`（需 token） | 從 auth-service 驗證 token | 401 未授權 |
+| # | 步驟 | 說明 |
+|---|------|------|
+| 3.1.1 | pom.xml + Dockerfile | port 8082 |
+| 3.1.2 | Flyway `V1__create_user_profiles.sql` | id, username, email, display_name |
+| 3.1.3 | `UserController` — `GET /user/profile`（需 token） | 401 未授權 |
 
 ### 3.2 跨服務 Token 驗證
 
-| # | 步驟 | 說明 | 驗證 |
-|---|------|------|------|
-| 3.2.1 | user-service 啟動時取得 auth-service 的 JWT secret（共用 secret 或 RSA public key） | `application.properties` | — |
-| 3.2.2 | user-service 建立 `JwtValidator`（共用 JWT 驗證邏輯，不含產生） | 只 validate 不 generate | `curl .../user/profile` 成功 |
-| 3.2.3 | 或改為 user-service 呼叫 `auth-service /auth/verify` 驗證 token（內部 API） | `RestTemplate` / `WebClient` | 雙重驗證 |
+| # | 步驟 | 說明 |
+|---|------|------|
+| 3.2.1 | 共用 JWT secret 或 RSA key pair | application.properties |
+| 3.2.2 | user-service `JwtValidator`（只驗證不產生） | curl 成功 |
+| 3.2.3 | 或呼叫 `auth-service /auth/verify` 做內部 API 驗證 | RestTemplate |
 
-### 3.3 Nginx 路由 + 驗證
+### 3.3 Nginx 路由
 
-| # | 步驟 | 說明 | 驗證 |
-|---|------|------|------|
-| 3.3.1 | `nginx.conf` 新增 `location /user/` → `user:8082` | nginx | `curl localhost/user/profile` |
-| 3.3.2 | 完整端到端流程：register → login → call user API | 全部服務 | — |
+| # | 步驟 | 驗證 |
+|---|------|------|
+| 3.3.1 | `location /user/` → `user:8082` | `curl localhost/user/profile` |
+| 3.3.2 | 完整流程：register → login → call user API | 全部服務 |
 
 ---
 
-## Phase 4 — 容器化部署（k3s）（1 週）
+## Phase 4 — k3s 部署（1 週）
 
-將現有 Docker Compose 應用搬遷到 k3s：
+### 4.1 環境建置
 
-### 4.1 k3s 環境建置
-
-| # | 步驟 | 說明 |
-|---|------|------|
-| 4.1.1 | Oracle VM 安裝 k3s | `curl -sfL https://get.k3s.io \| sh -` |
-| 4.1.2 | 建立 Namespace `identity` | `kubectl create ns identity` |
-| 4.1.3 | 建立 Secret（postgres-password, jwt-secret） | `kubectl create secret generic` |
-| 4.1.4 | 建立 ConfigMap（application.properties, nginx.conf） | `kubectl create configmap` |
+| # | 步驟 |
+|---|------|
+| 4.1.1 | Oracle VM 安裝 k3s |
+| 4.1.2 | 建立 Namespace `identity` |
+| 4.1.3 | Secret（postgres-password, jwt-secret） |
+| 4.1.4 | ConfigMap（application.properties, nginx.conf） |
 
 ### 4.2 部署資料層
 
 | # | 步驟 | 驗證 |
 |---|------|------|
-| 4.2.1 | 部署 PostgreSQL StatefulSet + Service | `kubectl exec` 連線 |
-| 4.2.2 | 部署 Redis StatefulSet + Service | `kubectl exec` ping |
+| 4.2.1 | PostgreSQL StatefulSet + Service | `kubectl exec` 連線 |
+| 4.2.2 | Redis StatefulSet + Service | `kubectl exec` ping |
 
 ### 4.3 部署應用層
 
-| # | 步驟 | 驗證 |
-|---|------|------|
-| 4.3.1 | 部署 auth-service Deployment + Service | `kubectl port-forward` 測試 |
-| 4.3.2 | 部署 user-service Deployment + Service | 同上 |
-| 4.3.3 | 部署 nginx Deployment + Service | 同上 |
+| # | 步驟 |
+|---|------|
+| 4.3.1 | auth-service Deployment + Service |
+| 4.3.2 | user-service Deployment + Service |
+| 4.3.3 | nginx Deployment + Service |
 
 ### 4.4 Ingress
 
-| # | 步驟 | 驗證 |
-|---|------|------|
-| 4.4.1 | 建立 Ingress（/auth/ → auth-service, /user/ → user-service） | `curl` 從外部 |
+| # | 步驟 |
+|---|------|
+| 4.4.1 | Ingress `/auth/` → auth-service, `/user/` → user-service |
 
 ---
 
 ## Phase 5 — Observability（1 週）
 
-### 5.1 Metrics 收集
+### 5.1 Actuator Metrics（承接 1.5.5）
+
+| # | 步驟 |
+|---|------|
+| 5.1.1 | 加入 `micrometer-registry-prometheus` |
+| 5.1.2 | 自訂 metrics：`login_success_total`, `login_failure_total`, `token_blacklist_count` |
+| 5.1.3 | JVM 內建 metrics（memory, thread, gc） |
+
+### 5.2 結構化 JSON 日誌
 
 | # | 步驟 | 說明 |
 |---|------|------|
-| 5.1.1 | 加入 `micrometer-registry-prometheus` 依賴 | pom.xml |
-| 5.1.2 | 自訂 Metrics：`login_success_total`, `login_failure_total`, `token_blacklist_count`, `cache_hit_ratio` | `MeterRegistry` |
-| 5.1.3 | JVM 內建 metrics（memory, thread, gc） | Actuator |
+| 5.2.1 | 加入 `logstash-logback-encoder` | pom.xml |
+| 5.2.2 | 建立 `logback-spring.xml` — JSON Console Appender | Loki 可直接解析 |
 
-### 5.2 Grafana + Prometheus
+### 5.3 Prometheus + Grafana
 
-| # | 步驟 | 說明 |
-|---|------|------|
-| 5.2.1 | docker-compose / k8s 加入 Prometheus | `prometheus.yml` |
-| 5.2.2 | docker-compose / k8s 加入 Grafana | provisioned datasource |
-| 5.2.3 | 建立 Dashboard：Login success rate / API latency / Redis hit ratio | grafana.com 匯入 |
+| # | 步驟 |
+|---|------|
+| 5.3.1 | docker-compose / k8s 加入 Prometheus |
+| 5.3.2 | docker-compose / k8s 加入 Grafana |
+| 5.3.3 | Dashboard：Login success rate / API latency / Redis hit ratio |
 
-### 5.3 Loki + 日誌聚合
+### 5.4 Loki + 日誌聚合
 
-| # | 步驟 | 說明 |
-|---|------|------|
-| 5.3.1 | 加入 Loki + Promtail / Alloy | docker-compose |
-| 5.3.2 | Grafana 建立 Logs 面板 | `{app="auth-service"}` |
+| # | 步驟 |
+|---|------|
+| 5.4.1 | 加入 Loki + Promtail |
+| 5.4.2 | Grafana Logs 面板 `{app="auth-service"}` |
 
 ---
 
-## Phase 6 — AI 輔助維運（持續進行）
+## Phase 6 — 整合測試（1 週）
 
-### 6.1 設定 AI 工作流程
+### 6.1 Testcontainers
+
+| # | 步驟 | 說明 |
+|---|------|------|
+| 6.1.1 | 加入 `testcontainers` + `testcontainers-postgresql` 依賴 | pom.xml |
+| 6.1.2 | 撰寫 `AuthControllerTest` — register → login → verify → logout | 測試用真實 PG + Redis |
+| 6.1.3 | 撰寫 `UserControllerTest` — 跨服務流程 | 整合測試 |
+
+---
+
+## Phase 7 — AI 輔助維運（持續）
 
 | 工具 | 用途 |
 |------|------|
 | Cursor | 快速產生 Controller / Service / Repository / Test |
-| Claude Code | `kubectl describe pod` 找 crash、分析 log、修改 yaml、security review |
-
-### 6.2 典型 AI Prompt 範例
-
-```
-分析 auth-service 最近 500 行 log，找出 login latency 增加原因
-幫我檢查 Kubernetes deployment 是否有 production risk
-幫我對這個 SecurityConfig 做 security review
-解釋為什麼這個 JWT filter 會拋 NPE
-```
+| Claude Code | `kubectl describe pod`、分析 log、修改 yaml、security review |
 
 ---
 
-## Phase 7 — 文件與作品集（持續進行）
+## Phase 8 — 文件與作品集（持續）
 
-### 7.1 Obsidian 筆記體系
+### 8.1 Obsidian 筆記體系
 
 ```
 Cloud Native Identity Platform
@@ -222,13 +333,13 @@ Cloud Native Identity Platform
 └── Interview Questions
 ```
 
-### 7.2 GitHub README 內容
+### 8.2 GitHub README 內容
 
 - Architecture Diagram
 - Why JWT? Why Redis? Why Stateless?
-- How to Deploy? (Docker Compose / k3s)
-- Failure Scenario（DB 掛了會怎樣？Redis 掛了會怎樣？）
-- Demo Script（從 register → login → call API → logout → verify fail）
+- How to Deploy?（Docker Compose / k3s）
+- Failure Scenario
+- Demo Script
 
 ---
 
@@ -236,27 +347,16 @@ Cloud Native Identity Platform
 
 | Phase | 內容 | 估時 | 備註 |
 |-------|------|------|------|
-| 0 | 現狀（已完成） | — | 基礎建設就緒 |
-| 1 | Spring Security + JWT 強化 | 1 週 | 核心差異化 |
+| 0 | Foundation（已完成） | — | 基礎建設就緒 |
+| 1 | Auth Service Core（Spring Security + JWT + BCrypt + Flyway） | 1 週 | 核心差異化 |
+| **1.5** | **Production Hardening** | **3-4 天** | **demo → production-ready** |
 | 2 | Redis 深度應用 | 3-4 天 | 面試亮點 |
 | 3 | User Service + 跨服務 | 3-4 天 | 微服務互動 |
 | 4 | k3s 部署 | 1 週 | DevOps 關鍵 |
 | 5 | Observability | 1 週 | 可觀測性 |
-| 6 | AI 輔助維運 | 持續 | 工具整合 |
-| 7 | 文件 + 作品集 | 持續 | 面試準備 |
-
-總計約 **4-5 週**可完成核心（Phase 1-4），之後逐步疊加 Observability 與 AI。
-
----
-
-## 每步驟驗證原則
-
-每個子步驟必須符合：
-
-1. **可獨立 build**：`mvn compile` 或 `docker build` 通過
-2. **可獨立啟動**：`docker compose up <service>` 正常
-3. **可 curl 驗證**：有明確的 request / expected response
-4. **可 commit**：每個子步驟一個 git commit
+| 6 | 整合測試 | 3-4 天 | 品質保證 |
+| 7 | AI 輔助維運 | 持續 | 工具整合 |
+| 8 | 文件 + 作品集 | 持續 | 面試準備 |
 
 ---
 
@@ -264,23 +364,17 @@ Cloud Native Identity Platform
 
 ```
 /workspace/
-├── spring-boot-demo/       # 可保留作為測試用，或移除
-├── auth-service/           # 主專案：身份認證服務
+├── auth-service/           # 身份認證服務
 ├── user-service/           # 使用者管理服務
 ├── nginx/                  # API Gateway
 ├── k8s/                    # k3s manifests
-│   ├── namespace.yaml
-│   ├── auth-deployment.yaml
-│   ├── user-deployment.yaml
-│   ├── postgres-statefulset.yaml
-│   ├── redis-statefulset.yaml
-│   ├── ingress.yaml
-│   └── secrets.yaml
-├── monitoring/             # Prometheus + Grafana + Loki 設定
-│   ├── prometheus.yml
-│   ├── grafana-dashboard.json
-│   └── loki-config.yml
+├── monitoring/             # Prometheus + Grafana + Loki
+├── docs/                   # 知識文件
+│   ├── phase-0-knowledge.md
+│   └── advanced-topics.md
 ├── .env                    # 環境變數（gitignored）
-├── docker-compose.yml      # 開發環境編排
+├── Makefile                # 常用指令
+├── docker-compose.yml      # 開發環境
+├── PLAN.md                 # 本計畫
 └── README.md               # 作品集入口
 ```
