@@ -9,10 +9,9 @@ services:
       - APP_VERSION=${APP_VERSION}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+      - POSTGRES_PASSWORD=pg_s3cr3t!
     secrets:
       - db_password
-      - postgres_password
     depends_on:
       postgres:
         condition: service_healthy

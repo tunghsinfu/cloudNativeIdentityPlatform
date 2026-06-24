@@ -5,9 +5,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
+import javax.sql.DataSource;
+
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.core.env.Environment;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -16,9 +20,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class DemoApplication {
 
     private final Environment env;
+    private final JdbcTemplate jdbc;
+    private final StringRedisTemplate redis;
 
-    public DemoApplication(Environment env) {
+    public DemoApplication(Environment env, JdbcTemplate jdbc, StringRedisTemplate redis) {
         this.env = env;
+        this.jdbc = jdbc;
+        this.redis = redis;
     }
 
     public static void main(String[] args) {
@@ -44,5 +52,25 @@ public class DemoApplication {
             "DB_PASSWORD", dbPassword,
             "secret_source", secretPath.toString()
         );
+    }
+
+    @GetMapping("/db-check")
+    public Map<String, Object> dbCheck() {
+        String pgStatus = "FAIL";
+        String redisStatus = "FAIL";
+        try {
+            jdbc.queryForObject("SELECT 1", Integer.class);
+            pgStatus = "OK";
+        } catch (Exception e) {
+            pgStatus = e.getMessage();
+        }
+        try {
+            redis.opsForValue().set("ping", "pong");
+            String pong = redis.opsForValue().get("ping");
+            redisStatus = "OK (ping=" + pong + ")";
+        } catch (Exception e) {
+            redisStatus = e.getMessage();
+        }
+        return Map.of("postgresql", pgStatus, "redis", redisStatus);
     }
 }
