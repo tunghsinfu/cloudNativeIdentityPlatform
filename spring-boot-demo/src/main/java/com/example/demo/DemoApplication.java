@@ -1,11 +1,6 @@
 package com.example.demo;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Map;
-
-import javax.sql.DataSource;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -39,18 +34,10 @@ public class DemoApplication {
     }
 
     @GetMapping("/config")
-    public Map<String, Object> config() throws IOException {
-        String dbPassword = "NOT_SET";
-        Path secretPath = Path.of("/run/secrets/db_password");
-        if (Files.exists(secretPath)) {
-            dbPassword = Files.readString(secretPath).trim();
-        }
-
+    public Map<String, Object> config() {
         return Map.of(
             "APP_ENV", env.getProperty("APP_ENV", "undefined"),
-            "APP_VERSION", env.getProperty("APP_VERSION", "undefined"),
-            "DB_PASSWORD", dbPassword,
-            "secret_source", secretPath.toString()
+            "APP_VERSION", env.getProperty("APP_VERSION", "undefined")
         );
     }
 
