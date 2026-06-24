@@ -5,23 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Microservices Demo</title>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 50px auto; text-align: center; }
+        body { font-family: sans-serif; max-width: 700px; margin: 50px auto; text-align: center; }
         h1 { color: #333; }
-        .status { margin-top: 30px; padding: 20px; background: #f0f8ff; border-radius: 8px; }
+        .card { margin-top: 20px; padding: 20px; background: #f0f8ff; border-radius: 8px; text-align: left; }
+        .card h3 { margin-top: 0; }
+        pre { background: #eee; padding: 10px; border-radius: 4px; overflow-x: auto; }
     </style>
 </head>
 <body>
     <h1>Microservices Demo</h1>
     <p>Welcome to the microservices demo!</p>
-    <div class="status">
-        <p>Nginx is running as API Gateway</p>
-        <p>Backend: <span id="backend-status">checking...</span></p>
+    <div class="card">
+        <h3>Backend</h3>
+        <p><span id="backend-status">checking...</span></p>
+    </div>
+    <div class="card">
+        <h3>Config (Env & Secrets)</h3>
+        <pre id="config-output">loading...</pre>
     </div>
     <script>
         fetch('/api/')
             .then(r => r.text())
             .then(t => document.getElementById('backend-status').textContent = t)
             .catch(() => document.getElementById('backend-status').textContent = 'unreachable');
+
+        fetch('/api/config')
+            .then(r => r.json())
+            .then(d => document.getElementById('config-output').textContent = JSON.stringify(d, null, 2))
+            .catch(() => document.getElementById('config-output').textContent = 'unreachable');
     </script>
 </body>
 </html>
