@@ -1,0 +1,24 @@
+services:
+  app:
+    build: ./spring-boot-demo
+    container_name: spring-demo
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - demo-net
+
+  nginx:
+    build: ./nginx
+    container_name: nginx-gateway
+    ports:
+      - "80:80"
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - demo-net
+
+networks:
+  demo-net:
+    driver: bridge
