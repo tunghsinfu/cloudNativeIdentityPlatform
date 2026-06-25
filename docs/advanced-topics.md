@@ -4,29 +4,7 @@
 
 ---
 
-## Phase 0 — Foundation 可追加
-
-### Docker 非 root 使用者
-
-```dockerfile
-FROM eclipse-temurin:21-jre-alpine
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-USER appuser
-```
-
-**面試話術**：「Container 預設以 root 執行，入侵即 root 權限。非 root 使用者是 container security 最基本的一步。」
-
-### Spring Boot Layered JAR
-
-```xml
-<plugin>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-maven-plugin</artifactId>
-    <configuration><layers><enabled>true</enabled></layers></configuration>
-</plugin>
-```
-
-**面試話術**：「Layered JAR 讓 dependencies 層可被 Docker layer cache，每次 build 只傳輸 application 層（通常幾 KB）。」
+## Phase 1 — Foundation 可追加
 
 ### Makefile
 
@@ -42,7 +20,9 @@ clean: docker compose down -v --rmi all
 
 ---
 
-## Phase 1 — Auth Service 可追加
+## Phase 4 — Auth Service 可追加
+
+以下項目已納入 Phase 4 主線計畫，此處保留參考。
 
 ### BCrypt 密碼編碼
 
@@ -82,7 +62,7 @@ public class GlobalExceptionHandler {
 
 ---
 
-## Phase 1.5 — Production Hardening
+## Phase 5 — Production Hardening
 
 ### Graceful Shutdown
 
@@ -139,7 +119,31 @@ management.endpoint.health.show-details=always
 
 ---
 
-## Phase 5 — Observability 可追加
+### Docker 非 root 使用者
+
+```dockerfile
+FROM eclipse-temurin:21-jre-alpine
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+```
+
+**面試話術**：「Container 預設以 root 執行，入侵即 root 權限。非 root 使用者是 container security 最基本的一步。」
+
+### Spring Boot Layered JAR
+
+```xml
+<plugin>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-maven-plugin</artifactId>
+    <configuration><layers><enabled>true</enabled></layers></configuration>
+</plugin>
+```
+
+**面試話術**：「Layered JAR 讓 dependencies 層可被 Docker layer cache，每次 build 只傳輸 application 層（通常幾 KB）。」
+
+---
+
+## Phase 9 — Observability 可追加
 
 ### 結構化 JSON 日誌
 
@@ -157,7 +161,7 @@ management.endpoint.health.show-details=always
 
 ---
 
-## Phase 6 — Integration Testing 可追加
+## Phase 10 — 整合測試可追加
 
 ### Testcontainers
 
