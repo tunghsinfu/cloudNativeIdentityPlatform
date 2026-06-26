@@ -620,14 +620,43 @@ docker compose exec redis redis-cli TTL "user:alice"
             showResponse(failData);
             if (failData.message === 'token revoked') {
                 setStepState(5, 'done');
-                showInterpretation('error', 'Demo complete: Token rejected after logout', [
-                    'The token was blacklisted in <strong>Redis</strong> during logout.',
-                    'Verify returned <strong>"token revoked"</strong> - the expected result.',
-                    'This completes the full lifecycle: register &rarr; login &rarr; verify &rarr; logout &rarr; rejected.',
-                    'Click <strong>Reset</strong> to start over.'
+                showInterpretation('info', 'Demo: Steps 1-5 done — now testing cache-aside...', [
+                    'Register &rarr; Login &rarr; Verify &rarr; Logout &rarr; Rejected: complete.',
+                    'Logging in again to demonstrate <strong>Redis cache-aside</strong>...'
                 ]);
             }
             saveToken(revokedToken, true);
+
+            // Step 6: Cache-Aside demo (login again)
+            await sleep(1000);
+            setStepState(6, 'active');
+            document.getElementById('login-username').value = username;
+            document.getElementById('login-password').value = password;
+            const loginAgain = await apiPost('/auth/v1/login', { username, password });
+            showResponse(loginAgain);
+            if (loginAgain.status === 'ok' && loginAgain.access_token) {
+                saveToken(loginAgain.access_token);
+                localStorage.setItem('refresh_token', loginAgain.refresh_token || '');
+                setStepState(6, 'done');
+                const cached = loginAgain.from_cache ? ' (from Redis cache)' : ' (from PostgreSQL)';
+                showInterpretation('success', 'Demo complete: Cache-Aside demonstrated' + cached, [
+                    'User data loaded' + cached + '.',
+                    '<strong>Cache-Aside Pattern:</strong> <code>UserRepository.findByUsername()</code> first checks Redis <code>user:' + username + '</code>.',
+                    'Miss &rarr; query PostgreSQL &rarr; write JSON to Redis (TTL 300s).',
+                    'Hit &rarr; return cached JSON (no DB query).',
+                    '',
+                    'Try <strong>Rate Limit</strong> manually: enter wrong password 5 times in Login.',
+                    'The <span class="tag red">N/5</span> counter appears next to the button.',
+                    'On the 6th attempt, the button locks for 60s (429).',
+                    'Check <strong>Step 6</strong> in the guide for details.'
+                ]);
+            } else {
+                setStepState(6, 'done');
+                showInterpretation('warn', 'Demo complete (cache-aside skipped)', [
+                    'Login for cache demo returned: ' + (loginAgain.message || 'unknown error'),
+                    'Rate limit & cache details are in <strong>Step 6</strong> of the guide.'
+                ]);
+            }
 
             btn.textContent = 'Replay Demo';
             document.body.classList.remove('demo-running');
