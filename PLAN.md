@@ -15,8 +15,8 @@
 | **1** | Project Foundation | ✅ 完成 |
 | **2** | 容器編排與 API Gateway | ✅ 完成 |
 | **3** | Auth Service 基本 | ✅ 完成 |
-| **4** | Auth Service 企業級強化 | 🔜 目前進度 |
-| **5** | Production Hardening | ⏳ 待開始 |
+| **4** | Auth Service 企業級強化 | ✅ 完成 |
+| **5** | Production Hardening | 🔜 目前 |
 | **6** | Redis 深度應用 | ⏳ |
 | **7** | User Service | ⏳ |
 | **8** | k3s 部署 | ⏳ |

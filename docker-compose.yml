@@ -23,6 +23,11 @@ services:
     restart: unless-stopped
     networks:
       - demo-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   auth:
     build:
@@ -49,6 +54,11 @@ services:
     restart: unless-stopped
     networks:
       - demo-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   nginx:
     build: ./nginx
@@ -61,6 +71,11 @@ services:
     restart: unless-stopped
     networks:
       - demo-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
 
   postgres:
     image: postgres:16-alpine
