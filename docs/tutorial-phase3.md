@@ -107,19 +107,32 @@ EOF
 cat > auth-service/src/main/java/com/example/auth/AuthApplication.java << 'EOF'
 package com.example.auth;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 
 @SpringBootApplication
 public class AuthApplication {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthApplication.class);
+
     public static void main(String[] args) {
         SpringApplication.run(AuthApplication.class, args);
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void onReady() {
+        log.info("Auth service started on port {}",
+            System.getenv().getOrDefault("SERVER_PORT_AUTH", "8081"));
     }
 }
 EOF
 ```
 
-與 `DemoApplication.java` 完全相同，差別只在 package name 和 class name。
+`ApplicationReadyEvent` 是 Spring Boot 在應用程式完全就緒後觸發的事件。`@EventListener` 讓此方法在事件發生時自動執行，適合放置啟動確認日誌。
 
 ### 3.1.5 建立 JwtUtil.java
 
@@ -640,6 +653,43 @@ http://localhost/
        ├── Verify     → GET  /auth/verify    → 簽章 + 黑名單檢查
        └── Logout     → POST /auth/logout    → Redis blacklist 寫入
 ```
+
+---
+
+### 附錄 A：如何查看 Log
+
+認證流程發生問題時，log 是最直接的除錯工具。
+
+**查看所有服務 log**：
+
+```bash
+docker compose logs -f --timestamps
+```
+
+**只看某個服務**：
+
+```bash
+docker compose logs -f --timestamps auth
+docker compose logs -f --timestamps app
+docker compose logs -f --timestamps nginx
+```
+
+**過濾關鍵字**：
+
+```bash
+docker compose logs auth | grep -i error
+docker compose logs auth | grep -i "login\|register\|token"
+```
+
+**`--timestamps` 的作用**：為每行 log 加上時間戳，便於比對多個服務間的事件順序。
+
+| 情境 | 指令 | 看什麼 |
+|------|------|--------|
+| 服務無法啟動 | `docker compose logs auth` | 最後幾行的 Exception stack trace |
+| 註冊失敗 | `docker compose logs auth \| grep register` | SQL 錯誤訊息 |
+| Token 驗證問題 | `docker compose logs auth \| grep verify` | JWT 解析結果 |
+| 前端 502 | `docker compose logs nginx` | upstream 連線被拒 |
+| 資料庫連線問題 | `docker compose logs postgres` | 認證或連線錯誤 |
 
 ---
 
