@@ -16,8 +16,8 @@
 | **2** | 容器編排與 API Gateway | ✅ 完成 |
 | **3** | Auth Service 基本 | ✅ 完成 |
 | **4** | Auth Service 企業級強化 | ✅ 完成 |
-| **5** | Production Hardening | 🔜 目前 |
-| **6** | Redis 深度應用 | ⏳ |
+| **5** | Production Hardening | ✅ 完成 |
+| **6** | Redis 深度應用 | 🔜 目前 |
 | **7** | User Service | ⏳ |
 | **8** | k3s 部署 | ⏳ |
 | **9** | Observability | ⏳ |
