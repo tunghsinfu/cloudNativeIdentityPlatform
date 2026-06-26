@@ -93,7 +93,10 @@
             <div class="card">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                     <h2 style="margin:0;">How it works</h2>
-                    <button class="btn btn-primary btn-sm" id="demo-btn" onclick="runDemo()">Run Demo</button>
+                    <div>
+                        <button class="btn btn-primary btn-sm" id="demo-btn" onclick="runDemo()">Run Demo</button>
+                        <button class="btn btn-outline btn-sm" onclick="resetAll()">Reset</button>
+                    </div>
                 </div>
                 <div id="guide-steps">
                     <div class="step" id="step-1" onclick="scrollToForm('register')">
@@ -278,12 +281,6 @@
             el.innerHTML = html;
         }
 
-        function setBadge(id, ok, text) {
-            const el = document.getElementById(id);
-            el.textContent = text;
-            el.className = 'status-badge ' + (ok ? 'ok' : 'fail');
-        }
-
         function setArch(id, ok) {
             const el = document.getElementById(id);
             el.className = 'arch-box ' + (ok ? 'up' : 'down');
@@ -383,24 +380,22 @@
                     decoded ? 'Token expires: <strong>' + new Date(decoded.exp * 1000).toLocaleTimeString() + '</strong>' : ''
                 ].filter(Boolean));
                 setArch('arch-redis', true);
+            } else if (data.message === 'token revoked') {
+                setStepState(5, 'done');
+                showInterpretation('error', 'Token rejected &mdash; blacklisted', [
+                    'The token was found in <strong>Redis</strong> <code>blacklist:&lt;token&gt;</code>.',
+                    'This means the token was revoked via <strong>Logout</strong>.',
+                    'Even though the JWT signature is valid and not expired, the blacklist takes priority.',
+                    'This is the core of stateless token revocation.'
+                ]);
             } else {
                 setStepState(3, 'active');
-                if (data.message === 'token revoked') {
-                    setStepState(5, 'done');
-                    showInterpretation('error', 'Token rejected &mdash; blacklisted', [
-                        'The token was found in <strong>Redis</strong> <code>blacklist:&lt;token&gt;</code>.',
-                        'This means the token was revoked via <strong>Logout</strong>.',
-                        'Even though the JWT signature is valid and not expired, the blacklist takes priority.',
-                        'This is the core of stateless token revocation.'
-                    ]);
-                } else {
-                    showInterpretation('error', 'Token invalid', [
-                        data.message || 'Unknown error.',
-                        'Possible causes: (1) Token is expired &mdash; check <code>exp</code> claim.',
-                        '(2) Token was tampered with &mdash; signature verification failed.',
-                        '(3) Wrong <code>$JWT_SECRET</code> between auth-service and the verifying service.'
-                    ]);
-                }
+                showInterpretation('error', 'Token invalid', [
+                    data.message || 'Unknown error.',
+                    'Possible causes: (1) Token is expired &mdash; check <code>exp</code> claim.',
+                    '(2) Token was tampered with &mdash; signature verification failed.',
+                    '(3) Wrong <code>$JWT_SECRET</code> between auth-service and the verifying service.'
+                ]);
             }
         }
 
@@ -435,15 +430,9 @@
         async function loadHealth() {
             const data = await apiGet('/auth/health');
             showResponse(data);
-            if (data.postgresql) {
-                setBadge('pg-badge', data.postgresql === 'OK', 'PG: ' + data.postgresql);
-                setArch('arch-pg', data.postgresql === 'OK');
-            }
-            if (data.redis) {
-                setBadge('redis-badge', data.redis === 'OK', 'Redis: ' + data.redis);
-                setArch('arch-redis', data.redis === 'OK');
-            }
             setArch('arch-auth', true);
+            setArch('arch-pg', data.postgresql === 'OK');
+            setArch('arch-redis', data.redis === 'OK');
             showInterpretation('info', 'Health check results', [
                 'Service: <strong>' + (data.service || 'unknown') + '</strong>',
                 'PostgreSQL: <strong>' + data.postgresql + '</strong> (query: <code>SELECT 1</code>)',
@@ -534,10 +523,11 @@
                 showInterpretation('error', 'Demo complete: Token rejected after logout', [
                     'The token was blacklisted in <strong>Redis</strong> during logout.',
                     'Verify returned <strong>"token revoked"</strong> - the expected result.',
-                    'This completes the full lifecycle: register &rarr; login &rarr; verify &rarr; logout &rarr; rejected.'
+                    'This completes the full lifecycle: register &rarr; login &rarr; verify &rarr; logout &rarr; rejected.',
+                    'Click <strong>Reset</strong> to start over.'
                 ]);
             }
-            saveToken('');
+            saveToken(revokedToken, true);
 
             btn.textContent = 'Replay Demo';
             document.body.classList.remove('demo-running');
@@ -550,6 +540,19 @@
                 if (parts.length !== 3) return null;
                 return JSON.parse(atob(parts[1]));
             } catch { return null; }
+        }
+
+        function resetAll() {
+            if (demoRunning) return;
+            resetSteps();
+            saveToken('');
+            document.getElementById('reg-username').value = '';
+            document.getElementById('reg-password').value = '';
+            document.getElementById('login-username').value = '';
+            document.getElementById('login-password').value = '';
+            showResponse('Reset. Start from Register again.');
+            showInterpretation(null);
+            document.getElementById('demo-btn').textContent = 'Run Demo';
         }
 
         function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
