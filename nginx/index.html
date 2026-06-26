@@ -3,36 +3,272 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Microservices Demo</title>
+    <title>Cloud Native Identity Platform</title>
     <style>
-        body { font-family: sans-serif; max-width: 700px; margin: 50px auto; text-align: center; }
-        h1 { color: #333; }
-        .card { margin-top: 20px; padding: 20px; background: #f0f8ff; border-radius: 8px; text-align: left; }
-        .card h3 { margin-top: 0; }
-        pre { background: #eee; padding: 10px; border-radius: 4px; overflow-x: auto; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f5f5f5; color: #333; }
+        h1 { text-align: center; color: #1a1a2e; margin-bottom: 24px; }
+        h2 { font-size: 1.1rem; margin: 0 0 12px 0; color: #1a1a2e; }
+        .row { display: flex; gap: 16px; flex-wrap: wrap; }
+        .col { flex: 1; min-width: 300px; }
+        .card { background: white; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .card.status-card { display: flex; gap: 12px; align-items: center; }
+        .status-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; }
+        .status-badge.ok { background: #d4edda; color: #155724; }
+        .status-badge.fail { background: #f8d7da; color: #721c24; }
+        label { display: block; font-size: 0.85rem; font-weight: 600; margin: 8px 0 4px; color: #555; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.95rem; }
+        input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: #4a90d9; box-shadow: 0 0 0 2px rgba(74,144,217,0.15); }
+        .btn { padding: 8px 16px; border: none; border-radius: 6px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary { background: #4a90d9; color: white; }
+        .btn-primary:hover { background: #357abd; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-success:hover { background: #218838; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-danger:hover { background: #c82333; }
+        .btn-outline { background: transparent; color: #666; border: 1px solid #ddd; }
+        .btn-outline:hover { background: #f0f0f0; }
+        .btn-group { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+        .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+        pre { background: #f8f9fa; border: 1px solid #eee; border-radius: 6px; padding: 12px; font-size: 0.82rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
+        .token-box { background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px; font-size: 0.78rem; word-break: break-all; margin: 8px 0; font-family: monospace; display: none; }
+        .helper { font-size: 0.78rem; color: #888; margin: 4px 0 0; }
+        .form-row { display: flex; gap: 8px; align-items: flex-end; }
+        .form-row .btn { white-space: nowrap; margin-bottom: 1px; }
+        hr { border: none; border-top: 1px solid #eee; margin: 16px 0; }
+        .loading { opacity: 0.5; pointer-events: none; }
     </style>
 </head>
 <body>
-    <h1>Microservices Demo</h1>
-    <p>Welcome to the microservices demo!</p>
-    <div class="card">
-        <h3>Backend</h3>
-        <p><span id="backend-status">checking...</span></p>
-    </div>
-    <div class="card">
-        <h3>Config (Env & Secrets)</h3>
-        <pre id="config-output">loading...</pre>
-    </div>
-    <script>
-        fetch('/api/')
-            .then(r => r.text())
-            .then(t => document.getElementById('backend-status').textContent = t)
-            .catch(() => document.getElementById('backend-status').textContent = 'unreachable');
+    <h1>Cloud Native Identity Platform</h1>
 
-        fetch('/api/config')
-            .then(r => r.json())
-            .then(d => document.getElementById('config-output').textContent = JSON.stringify(d, null, 2))
-            .catch(() => document.getElementById('config-output').textContent = 'unreachable');
+    <!-- Status -->
+    <div class="row">
+        <div class="col">
+            <div class="card status-card">
+                <span>Backend</span>
+                <span id="backend-badge" class="status-badge">checking...</span>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card status-card">
+                <span>PostgreSQL</span>
+                <span id="pg-badge" class="status-badge">checking...</span>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card status-card">
+                <span>Redis</span>
+                <span id="redis-badge" class="status-badge">checking...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Auth Service -->
+    <div class="row">
+        <div class="col">
+            <div class="card">
+                <h2>Register</h2>
+                <form id="register-form" onsubmit="return register(event)">
+                    <label for="reg-username">Username</label>
+                    <input type="text" id="reg-username" placeholder="alice" required>
+                    <label for="reg-password">Password</label>
+                    <input type="password" id="reg-password" placeholder="Str0ng!Pass" required>
+                    <div class="btn-group">
+                        <button type="submit" class="btn btn-success">Register</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card">
+                <h2>Login</h2>
+                <form id="login-form" onsubmit="return login(event)">
+                    <label for="login-username">Username</label>
+                    <input type="text" id="login-username" placeholder="alice" required>
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" placeholder="Str0ng!Pass" required>
+                    <div class="btn-group">
+                        <button type="submit" class="btn btn-primary">Login</button>
+                        <button type="button" class="btn btn-outline btn-sm" onclick="loadHealth()">Health</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Token -->
+    <div class="card">
+        <div class="row" style="align-items: baseline; margin-bottom: 8px;">
+            <div class="col"><h2 style="margin:0;">Token</h2></div>
+            <div class="col" style="text-align:right;">
+                <button class="btn btn-outline btn-sm" onclick="clearToken()">Clear</button>
+            </div>
+        </div>
+        <div id="token-box" class="token-box"></div>
+        <p class="helper" id="token-helper">No token. Login to get one.</p>
+        <div class="btn-group">
+            <button class="btn btn-success btn-sm" onclick="verifyToken()">Verify</button>
+            <button class="btn btn-danger btn-sm" onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <!-- Response -->
+    <div class="card">
+        <h2>Response</h2>
+        <pre id="response">Waiting for action...</pre>
+    </div>
+
+    <script>
+        // === Token Management ===
+        let currentToken = localStorage.getItem('jwt_token') || '';
+
+        function saveToken(token) {
+            currentToken = token;
+            localStorage.setItem('jwt_token', token);
+            const box = document.getElementById('token-box');
+            const helper = document.getElementById('token-helper');
+            if (token) {
+                box.textContent = token;
+                box.style.display = 'block';
+                helper.textContent = 'Token is set. Use Verify or Logout.';
+            } else {
+                box.style.display = 'none';
+                helper.textContent = 'No token. Login to get one.';
+            }
+        }
+
+        function clearToken() {
+            saveToken('');
+            showResponse('Token cleared.', 'info');
+        }
+
+        function getToken() {
+            return currentToken;
+        }
+
+        // === API Helpers ===
+        async function apiPost(url, data) {
+            const params = new URLSearchParams();
+            for (const [k, v] of Object.entries(data)) {
+                params.append(k, v);
+            }
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            return res.json();
+        }
+
+        async function apiGet(url, token) {
+            const headers = {};
+            if (token) headers['Authorization'] = 'Bearer ' + token;
+            const res = await fetch(url, { headers });
+            return res.json();
+        }
+
+        function showResponse(data, label) {
+            const el = document.getElementById('response');
+            if (typeof data === 'string') {
+                el.textContent = data;
+            } else {
+                el.textContent = JSON.stringify(data, null, 2);
+            }
+        }
+
+        function setBadge(id, ok, text) {
+            const el = document.getElementById(id);
+            el.textContent = text;
+            el.className = 'status-badge ' + (ok ? 'ok' : 'fail');
+        }
+
+        // === Actions ===
+        async function register(event) {
+            event.preventDefault();
+            const username = document.getElementById('reg-username').value;
+            const password = document.getElementById('reg-password').value;
+            const data = await apiPost('/auth/register', { username, password });
+            showResponse(data);
+            if (data.status === 'ok') {
+                document.getElementById('reg-username').value = '';
+                document.getElementById('reg-password').value = '';
+                document.getElementById('login-username').value = username;
+            }
+        }
+
+        async function login(event) {
+            event.preventDefault();
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            const data = await apiPost('/auth/login', { username, password });
+            showResponse(data);
+            if (data.status === 'ok' && data.token) {
+                saveToken(data.token);
+            }
+        }
+
+        async function verifyToken() {
+            const token = getToken();
+            if (!token) { showResponse('No token. Login first.'); return; }
+            const data = await apiGet('/auth/verify', token);
+            showResponse(data);
+        }
+
+        async function logout() {
+            const token = getToken();
+            if (!token) { showResponse('No token. Login first.'); return; }
+            const res = await fetch('/auth/logout', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            const data = await res.json();
+            showResponse(data);
+            if (data.status === 'ok') {
+                saveToken('');
+            }
+        }
+
+        async function loadHealth() {
+            const data = await apiGet('/auth/health');
+            showResponse(data);
+            if (data.postgresql) {
+                setBadge('pg-badge', data.postgresql === 'OK', 'PG: ' + data.postgresql);
+            }
+            if (data.redis) {
+                setBadge('redis-badge', data.redis === 'OK', 'Redis: ' + data.redis);
+            }
+        }
+
+        async function loadStatus() {
+            try {
+                const text = await (await fetch('/api/')).text();
+                setBadge('backend-badge', true, 'UP');
+                document.getElementById('backend-badge').title = text;
+            } catch {
+                setBadge('backend-badge', false, 'DOWN');
+            }
+            try {
+                const data = await (await fetch('/api/db-check')).json();
+                setBadge('pg-badge', data.postgresql === 'OK', 'PG: ' + data.postgresql);
+                setBadge('redis-badge', data.redis.startsWith('OK'), 'Redis: ' + (data.redis.startsWith('OK') ? 'OK' : 'DOWN'));
+            } catch {
+                setBadge('pg-badge', false, 'PG: DOWN');
+                setBadge('redis-badge', false, 'Redis: DOWN');
+            }
+        }
+
+        // === Restore token on load ===
+        if (currentToken) {
+            const box = document.getElementById('token-box');
+            box.textContent = currentToken;
+            box.style.display = 'block';
+            document.getElementById('token-helper').textContent = 'Token restored from session.';
+        }
+
+        // === Initial status ===
+        loadStatus();
     </script>
 </body>
 </html>
