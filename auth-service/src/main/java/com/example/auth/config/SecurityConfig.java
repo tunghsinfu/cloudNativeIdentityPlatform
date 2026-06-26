@@ -32,7 +32,6 @@ public class SecurityConfig {
                     "/auth/v1/register",
                     "/auth/v1/login",
                     "/auth/v1/refresh",
-                    "/auth/v1/unlock",
                     "/auth/v1/health",
                     "/actuator/health",
                     "/actuator/info"
