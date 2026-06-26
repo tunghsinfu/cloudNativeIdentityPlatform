@@ -139,6 +139,24 @@
                             <div class="step-detail">After logout, <code>/auth/verify</code> finds the token in the Redis blacklist and returns <code>"token revoked"</code>. This demonstrates the complete lifecycle: register &rarr; login &rarr; access &rarr; logout &rarr; denied.</div>
                         </div>
                     </div>
+                    <!-- Phase 6: Rate Limit + Cache -->
+                    <div class="step" id="step-6" onclick="scrollToForm('login')">
+                        <div class="step-num">6</div>
+                        <div class="step-content">
+                            <div class="step-title">Explore: Rate Limit &amp; Cache</div>
+                            <div class="step-desc">Trigger 5 failed logins &rarr; 429 lockout &bull; See Redis cache on success</div>
+                            <div class="step-detail">
+                                <strong>Rate Limit</strong> &mdash; enter wrong password 5 times in Login. Watch the fail counter (<span class="tag red">N/5</span>) next to the button. On the 6th attempt, the button disables for 60s and you get a red "Login locked" message.<br>
+                                <strong>Cache-Aside</strong> &mdash; after login succeeds, the interpretation panel shows <em>(from Redis cache)</em> or <em>(from PostgreSQL)</em>. The cache is stored as JSON in Redis key <code>user:{username}</code> with TTL 300s.<br>
+                                <strong>Redis commands</strong> to inspect manually:
+                                <code style="display:block;margin-top:4px;background:#f8f9fa;padding:6px;border-radius:4px;">
+docker compose exec redis redis-cli GET "login_fail:alice"<br>
+docker compose exec redis redis-cli GET "user:alice"<br>
+docker compose exec redis redis-cli TTL "user:alice"
+                                </code>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -163,7 +181,7 @@
             <!-- Login -->
             <div class="card" id="form-login">
                 <h2>Login <span class="tag blue">Step 2</span></h2>
-                <p class="helper">Authenticates against <strong>PostgreSQL</strong> using BCrypt. On success, returns an <strong>access token</strong> (JWT, 15 min) + <strong>refresh token</strong> (opaque UUID in Redis, 7 days).</p>
+                <p class="helper">Authenticates against <strong>PostgreSQL</strong> (or <strong>Redis cache</strong>) using BCrypt. On success, returns an <strong>access token</strong> (JWT, 15 min) + <strong>refresh token</strong> (opaque UUID in Redis, 7 days). <strong>Rate limit:</strong> 5 wrong attempts &rarr; 60s lockout (<span class="tag red">N/5</span>).</p>
                 <form id="login-form" onsubmit="return login(event)">
                     <label for="login-username">Username</label>
                     <input type="text" id="login-username" placeholder="alice" required>
@@ -172,6 +190,7 @@
                     <div class="btn-group">
                         <button type="submit" class="btn btn-primary" id="login-btn">Login</button>
                         <button type="button" class="btn btn-danger btn-sm" onclick="logout()">Logout</button>
+                        <span id="fail-counter" class="tag red" style="display:none;align-self:center;"></span>
                     </div>
                     <div id="rate-limit-msg" class="helper" style="display:none;color:#dc3545;"></div>
                 </form>
@@ -298,7 +317,7 @@
         }
 
         function resetSteps() {
-            for (let i = 1; i <= 5; i++) {
+            for (let i = 1; i <= 6; i++) {
                 document.getElementById('step-' + i).className = 'step';
             }
         }
@@ -356,6 +375,7 @@
                 localStorage.setItem('refresh_token', data.refresh_token || '');
                 loginFails[username] = 0;
                 rateMsg.style.display = 'none';
+                document.getElementById('fail-counter').style.display = 'none';
                 setStepState(2, 'done');
                 setStepState(3, 'active');
                 const cached = data.from_cache ? ' (from Redis cache)' : ' (from PostgreSQL)';
@@ -365,14 +385,18 @@
                     '&bull; Claims: <code>jti</code> (UUID), <code>sub</code>=' + username + ', <code>role</code>=USER, <code>iat</code>, <code>exp</code>',
                     '&bull; Access token expires in <strong>15 minutes</strong>',
                     '&bull; Refresh token (opaque UUID) stored in Redis, expires in <strong>7 days</strong>',
-                    'The access token is now stored in your browser. Click <strong>Verify</strong> to check it.'
+                    'The access token is now stored in your browser. Click <strong>Verify</strong> to check it.',
+                    '&bull; <strong>Tip:</strong> check Step 6 in the guide to learn about Rate Limit &amp; Cache.'
                 ]);
                 setArch('arch-auth', true);
+                setStepState(6, 'active');
             } else if (data.code === 'RATE_LIMITED') {
                 loginFails[username] = (loginFails[username] || 0) + 1;
                 rateMsg.textContent = 'Too many failed attempts. Login locked for 60s.';
                 rateMsg.style.display = 'block';
                 rateMsg.dataset.username = username;
+                const counter = document.getElementById('fail-counter');
+                counter.style.display = 'none';
                 document.getElementById('login-btn').disabled = true;
                 setTimeout(() => {
                     rateMsg.textContent = 'Login unlocked — try again.';
@@ -389,6 +413,9 @@
                 loginFails[username] = (loginFails[username] || 0) + 1;
                 const count = loginFails[username];
                 const remaining = Math.max(0, 5 - count);
+                const counter = document.getElementById('fail-counter');
+                counter.textContent = count + '/5';
+                counter.style.display = 'inline';
                 showInterpretation('error', 'Login failed (' + count + '/5)', [
                     data.message || 'Unknown error.',
                     remaining > 0 ? 'After <strong>5 failures</strong>, rate limiting will kick in.' : 'Rate limiting is now active for <strong>' + username + '</strong>.',
@@ -627,6 +654,7 @@
             document.getElementById('login-password').value = '';
             document.getElementById('rate-limit-msg').style.display = 'none';
             document.getElementById('login-btn').disabled = false;
+            document.getElementById('fail-counter').style.display = 'none';
             loginFails = {};
             showResponse('Reset. Start from Register again.');
             showInterpretation(null);
