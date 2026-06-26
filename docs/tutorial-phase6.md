@@ -9,25 +9,23 @@
 
 ## 6.1 Login Rate Limit
 
-### 6.1.1 流程設計
+### 6.1.1 流程設計（INCR-first）
 
 ```
 Client                     auth-service                   Redis
   │                           │                            │
   ├─ POST /auth/v1/login ────→                              │
-  │                           ├─ GET login_fail:alice ─────→│
-  │                           │← 5 (已達上限) ──────────────│
-  │                           ├─ throw 429 RATE_LIMITED     │
+  │                           ├─ INCR login_fail:alice ───→│
+  │                           │← 5 ────────────────────────│
+  │                           ├─ 5 ≥ 5? YES → throw 429    │
   │                           │                            │
-  │                           ├─ (正常流程)                 │
-  │                           │  ┌─ user not found? ───────→│
-  │                           │  │  INCR login_fail:alice ─→│
-  │                           │  │  EXPIRE 600s            │
+  │                           ├─ (1≤ count <5 繼續)        │
+  │                           │  ┌─ user not found? ──────→│
+  │                           │  │  (INCR already done)    │
   │                           │  └─ throw 401              │
   │                           │                            │
   │                           │  ┌─ password wrong? ──────→│
-  │                           │  │  INCR login_fail:alice ─→│
-  │                           │  │  EXPIRE 600s            │
+  │                           │  │  (INCR already done)    │
   │                           │  └─ throw 401              │
   │                           │                            │
   │                           │  └─ success ──────────────→│
@@ -35,36 +33,34 @@ Client                     auth-service                   Redis
   │                         ← json                         │
 ```
 
-### 6.1.2 實作
+為何用 **INCR-first** 而非 GET-first？因為 INCR 是原子操作，能保證在分散式環境下計數準確。先 INCR 再檢查，第 5 次請求就能正確觸發 rate limit（GET-first 要到第 6 次才會擋）。
 
-在 `AuthController.login()` 加入三個動作：
+### 6.1.2 實作（INCR-first）
 
-**Step 1：檢查上限**
+在 `AuthController.login()` 開頭加入 INCR + 檢查，取代原本的 GET 檢查：
 
 ```java
 String rateKey = "login_fail:" + username;
-String val = redis.opsForValue().get(rateKey);
-if (val != null && Integer.parseInt(val) >= 5) {
+Long count = redis.opsForValue().increment(rateKey);
+if (count == 1) {
+    redis.expire(rateKey, Duration.ofSeconds(600));
+}
+if (count >= 5) {
     throw new RateLimitExceededException("too many login attempts, try again later");
 }
 ```
 
-**Step 2：失敗時遞增**
+流程說明：
 
-```java
-private void incrementRate(String key) {
-    Long count = redis.opsForValue().increment(key);
-    if (count != null && count == 1) {
-        redis.expire(key, Duration.ofSeconds(600));
-    }
-}
-```
+| 步驟 | 程式碼 | 說明 |
+|------|--------|------|
+| **INCR** | `redis.opsForValue().increment(rateKey)` | 計數器 +1，原子操作 |
+| **TTL** | `redis.expire(rateKey, Duration.ofSeconds(600))` | 第一次建立時設定 10 分鐘後自動歸零 |
+| **檢查** | `if (count >= 5)` | 第 5 次觸發 429 |
 
-- `INCR` 是原子操作，不回有 race condition
-- 只有在 count 為 1（第一次建立）時才設 TTL
-- TTL 600 秒（10 分鐘）後自動歸零
+為什麼 INCR 在檢查前面？這樣第 1 次 INCR → 1 (<5)、第 2 次 → 2 (<5)…第 5 次 → 5 (≥5) 直接擋掉，使用者體驗更直覺。
 
-**Step 3：成功時清除**
+成功登入時清除計數器：
 
 ```java
 redis.delete(rateKey);
@@ -220,23 +216,23 @@ docker compose up -d --no-deps auth nginx
 **方法一：Web UI**
 
 1. 打開 http://localhost:28080/
-2. 在 Login 表單輸入 `alice` / 任意錯誤密碼，連續送 5 次
-3. 第 6 次會看到按鈕被停用，出現紅色提示「Login locked for 60s」
+2. 在 Login 表單輸入 `alice` / 任意錯誤密碼，送 4 次（counter 顯示 `1/5` → `4/5`）
+3. 第 5 次送出 → 按鈕被停用，出現紅色提示「Login locked for 60s」
 4. 「What just happened?」面板會顯示 rate limit 說明
 
 **方法二：curl**
 
 ```bash
-# 連續 5 次錯誤密碼
-for i in $(seq 1 5); do
+# 前 4 次 — 401，計數器遞增
+for i in $(seq 1 4); do
   curl -s -X POST http://localhost:28080/auth/v1/login \
     -d "username=alice&password=wrong$i"
   echo
 done
 
-# 第 6 次 — 應該被擋
+# 第 5 次 — 被擋（429）
 curl -s -X POST http://localhost:28080/auth/v1/login \
-  -d "username=alice&password=wrong6"
+  -d "username=alice&password=wrong5"
 # {"code":"RATE_LIMITED","message":"too many login attempts, try again later"}
 
 # 檢查 Redis 計數器
