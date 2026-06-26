@@ -203,13 +203,16 @@ done
 | `UserRepository.java` | 注入 `StringRedisTemplate`，cache-aside 讀寫 |
 | `handler/RateLimitExceededException.java` | 新增，429 例外 |
 | `handler/GlobalExceptionHandler.java` | 加入 `RateLimitExceededException` handler |
+| `nginx/index.html` | Login 加入 rate limit 視覺化（失敗次數、按鈕停用 60s） |
 
 ## 6.4 驗證步驟
 
-### 6.4.1 重啟服務
+### 6.4.1 更新前端（含 Rate Limit UI）與重啟
 
 ```bash
-docker compose build auth && docker compose up -d --no-deps auth
+cp samples/phase6/index.html nginx/index.html
+docker compose build auth nginx
+docker compose up -d --no-deps auth nginx
 ```
 
 ### 6.4.2 Rate Limit 測試
