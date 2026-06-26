@@ -31,81 +31,10 @@ mkdir -p auth-service/src/main/java/com/example/auth
 mkdir -p auth-service/src/main/resources
 ```
 
-建立 `auth-service/pom.xml`：
+`pom.xml` 已預先準備在 `samples/phase3/pom.xml`，直接複製：
 
 ```bash
-cat > auth-service/pom.xml << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.5</version>
-        <relativePath/>
-    </parent>
-
-    <groupId>com.example</groupId>
-    <artifactId>auth-service</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
-    <name>auth-service</name>
-    <description>Authentication Service with JWT</description>
-
-    <properties>
-        <java.version>21</java.version>
-        <jjwt.version>0.12.6</jjwt.version>
-    </properties>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-jdbc</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-api</artifactId>
-            <version>${jjwt.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-impl</artifactId>
-            <version>${jjwt.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-jackson</artifactId>
-            <version>${jjwt.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
-</project>
-EOF
+cp samples/phase3/pom.xml auth-service/pom.xml
 ```
 
 **jjwt 三個模組的分工**：
@@ -194,59 +123,11 @@ EOF
 
 ### 3.1.5 建立 JwtUtil.java
 
+完整原始碼在 `samples/phase3/JwtUtil.java`，直接複製：
+
 ```bash
-cat > auth-service/src/main/java/com/example/auth/JwtUtil.java << 'EOF'
-package com.example.auth;
-
-import java.security.Key;
-import java.util.Date;
-
-import javax.crypto.SecretKey;
-
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-
-import io.jsonwebtoken.JwtException;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
-
-@Component
-public class JwtUtil {
-
-    private final SecretKey key;
-    private final long expirationMs;
-
-    public JwtUtil(@Value("${jwt.secret}") String secret,
-                   @Value("${jwt.expiration-ms}") long expirationMs) {
-        this.key = Keys.hmacShaKeyFor(Decoders.BASE64.decode(
-            java.util.Base64.getEncoder().encodeToString(secret.getBytes())));
-        this.expirationMs = expirationMs;
-    }
-
-    public String generateToken(String username) {
-        return Jwts.builder()
-                .subject(username)
-                .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + expirationMs))
-                .signWith(key)
-                .compact();
-    }
-
-    public String validateAndGetUsername(String token) {
-        try {
-            return Jwts.parser()
-                    .verifyWith(key)
-                    .build()
-                    .parseSignedClaims(token)
-                    .getPayload()
-                    .getSubject();
-        } catch (JwtException e) {
-            return null;
-        }
-    }
-}
-EOF
+cp samples/phase3/JwtUtil.java \
+   auth-service/src/main/java/com/example/auth/JwtUtil.java
 ```
 
 **JwtUtil 角色**：在 `auth-service` 中負責所有 JWT 相關操作——產生 token 與驗證 token。
@@ -344,118 +225,11 @@ docker build -t auth-service ./auth-service/
 
 ### 3.2.1 建立 AuthController.java
 
+完整原始碼在 `samples/phase3/AuthController.java`，直接複製：
+
 ```bash
-cat > auth-service/src/main/java/com/example/auth/AuthController.java << 'EOF'
-package com.example.auth;
-
-import java.util.Map;
-
-import org.springframework.core.env.Environment;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-
-@RestController
-@RequestMapping("/auth")
-public class AuthController {
-
-    private final Environment env;
-    private final JdbcTemplate jdbc;
-    private final StringRedisTemplate redis;
-    private final JwtUtil jwt;
-
-    public AuthController(Environment env, JdbcTemplate jdbc,
-                          StringRedisTemplate redis, JwtUtil jwt) {
-        this.env = env;
-        this.jdbc = jdbc;
-        this.redis = redis;
-        this.jwt = jwt;
-    }
-
-    @PostMapping("/register")
-    public Map<String, Object> register(@RequestParam String username,
-                                        @RequestParam String password) {
-        try {
-            jdbc.update("INSERT INTO users (username, password) VALUES (?, ?)",
-                        username, password);
-            return Map.of("status", "ok", "message", "user created");
-        } catch (Exception e) {
-            return Map.of("status", "error", "message", e.getMessage());
-        }
-    }
-
-    @PostMapping("/login")
-    public Map<String, Object> login(@RequestParam String username,
-                                     @RequestParam String password) {
-        var users = jdbc.query(
-            "SELECT password FROM users WHERE username = ?",
-            (rs, row) -> rs.getString("password"), username);
-
-        if (users.isEmpty() || !users.getFirst().equals(password)) {
-            return Map.of("status", "error", "message", "invalid credentials");
-        }
-
-        String token = jwt.generateToken(username);
-        return Map.of("status", "ok", "token", token);
-    }
-
-    @GetMapping("/verify")
-    public Map<String, Object> verify(
-            @RequestHeader("Authorization") String authHeader) {
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return Map.of("status", "error", "message", "missing token");
-        }
-        String token = authHeader.substring(7);
-
-        if (Boolean.TRUE.equals(redis.hasKey("blacklist:" + token))) {
-            return Map.of("status", "error", "message", "token revoked");
-        }
-
-        String username = jwt.validateAndGetUsername(token);
-        if (username == null) {
-            return Map.of("status", "error", "message", "invalid token");
-        }
-        return Map.of("status", "ok", "username", username);
-    }
-
-    @PostMapping("/logout")
-    public Map<String, Object> logout(
-            @RequestHeader("Authorization") String authHeader) {
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return Map.of("status", "error", "message", "missing token");
-        }
-        String token = authHeader.substring(7);
-        redis.opsForValue().set("blacklist:" + token, "1");
-        return Map.of("status", "ok", "message", "logged out");
-    }
-
-    @GetMapping("/health")
-    public Map<String, Object> health() {
-        String pg = "FAIL";
-        String r = "FAIL";
-        try {
-            jdbc.queryForObject("SELECT 1", Integer.class);
-            pg = "OK";
-        } catch (Exception e) { pg = e.getMessage(); }
-        try {
-            redis.opsForValue().set("auth-ping", "pong");
-            r = "OK";
-        } catch (Exception e) { r = e.getMessage(); }
-        return Map.ofEntries(
-            Map.entry("service", env.getProperty("spring.application.name", "unknown")),
-            Map.entry("postgresql", pg),
-            Map.entry("redis", r),
-            Map.entry("LOG_LEVEL", env.getProperty("LOG_LEVEL", "undefined")),
-            Map.entry("CACHE_TTL", env.getProperty("CACHE_TTL", "undefined"))
-        );
-    }
-}
-EOF
+cp samples/phase3/AuthController.java \
+   auth-service/src/main/java/com/example/auth/AuthController.java
 ```
 
 **API 說明**：

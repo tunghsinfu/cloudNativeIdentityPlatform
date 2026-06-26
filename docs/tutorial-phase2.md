@@ -209,135 +209,16 @@ Alpine 版本基於 `musl libc` + BusyBox，映像極小。對 Nginx 這種純�
 
 建立一個可操作的 WEB UI，直接從瀏覽器呼叫後端 API，不需要 curl。
 
+完整原始碼已預先準備在 `samples/phase2/index.html`，直接複製到專案中：
+
 ```bash
-cat > nginx/index.html << 'ENDOFFILE'
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cloud Native Identity Platform</title>
-    <style>
-        * { box-sizing: border-box; }
-        body { font-family: -apple-system, system-ui, sans-serif; max-width: 960px; margin: 0 auto; padding: 16px; background: #f5f5f5; color: #333; }
-        h1 { text-align: center; color: #1a1a2e; margin-bottom: 16px; font-size: 1.5rem; }
-        h2 { font-size: 1rem; margin: 0 0 8px 0; color: #1a1a2e; }
-        .card { background: white; border-radius: 8px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .btn { padding: 7px 14px; border: none; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
-        .btn-primary { background: #4a90d9; color: white; }
-        .btn-success { background: #28a745; color: white; }
-        .btn-danger { background: #dc3545; color: white; }
-        .btn-outline { background: transparent; color: #666; border: 1px solid #ddd; }
-        .btn-group { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-        .btn-sm { padding: 4px 10px; font-size: 0.78rem; }
-        pre { background: #f8f9fa; border: 1px solid #eee; border-radius: 6px; padding: 10px; font-size: 0.8rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
-        .arch-diagram { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px; font-size: 0.75rem; flex-wrap: wrap; }
-        .arch-box { padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 0.72rem; }
-        .arch-box.up { background: #d4edda; border: 1px solid #c3e6cb; }
-        .arch-box.down { background: #f8d7da; border: 1px solid #f5c6cb; }
-        .arch-arrow { color: #999; font-size: 0.9rem; }
-        .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; }
-        .tag.green { background: #d1e7dd; color: #0f5132; }
-        .tag.blue { background: #cfe2ff; color: #084298; }
-        .tag.red { background: #f8d7da; color: #842029; }
-        .tag.yellow { background: #fff3cd; color: #664d03; }
-    </style>
-</head>
-<body>
-    <h1>Cloud Native Identity Platform</h1>
-    <div class="card" style="padding:10px;">
-        <div class="arch-diagram">
-            <span class="arch-box" id="arch-browser">Browser</span>
-            <span class="arch-arrow">&rarr;</span>
-            <span class="arch-box" id="arch-nginx">Nginx :80</span>
-            <span class="arch-arrow">&rarr;</span>
-            <span class="arch-box" id="arch-auth">auth-service :8081</span>
-            <span class="arch-arrow">&rarr;</span>
-            <span class="arch-box" id="arch-pg">PostgreSQL</span>
-            <span class="arch-arrow">&</span>
-            <span class="arch-box" id="arch-redis">Redis</span>
-        </div>
-    </div>
-    <div class="row">
-        <div class="col">
-            <div class="card">
-                <h2>Register</h2>
-                <form id="register-form" onsubmit="return register(event)">
-                    <input type="text" id="reg-username" placeholder="Username" required>
-                    <input type="password" id="reg-password" placeholder="Password" required>
-                    <button type="submit" class="btn btn-success">Register</button>
-                </form>
-            </div>
-        </div>
-        <div class="col">
-            <div class="card">
-                <h2>Login</h2>
-                <form id="login-form" onsubmit="return login(event)">
-                    <input type="text" id="login-username" placeholder="Username" required>
-                    <input type="password" id="login-password" placeholder="Password" required>
-                    <button type="submit" class="btn btn-primary">Login</button>
-                    <button type="button" class="btn btn-danger btn-sm" onclick="logout()">Logout</button>
-                </form>
-            </div>
-        </div>
-    </div>
-    <div class="card">
-        <h2>JWT Token</h2>
-        <div id="token-box" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px;font-size:0.75rem;word-break:break-all;margin:6px 0;font-family:monospace;"></div>
-        <div id="token-status" class="helper"></div>
-        <button class="btn btn-success btn-sm" onclick="verifyToken()">Verify Token</button>
-    </div>
-    <div class="card">
-        <h2>Response</h2>
-        <pre id="response">Waiting for action...</pre>
-    </div>
-    <script>
-        let currentToken = localStorage.getItem('jwt_token') || '';
-        function saveToken(token, revoked) {
-            currentToken = token; localStorage.setItem('jwt_token', token);
-            const box = document.getElementById('token-box');
-            const status = document.getElementById('token-status');
-            if (token) {
-                box.textContent = token; box.style.display = 'block';
-                if (revoked) { box.style.background = '#f8d7da'; box.style.borderColor = '#dc3545'; status.innerHTML = 'Token revoked.'; }
-                else { box.style.background = '#fff3cd'; box.style.borderColor = '#ffc107'; status.textContent = 'Token active.'; }
-            } else { box.style.display = 'none'; status.innerHTML = 'No token.'; }
-        }
-        function getToken() { return currentToken; }
-        async function apiPost(url, data) {
-            const params = new URLSearchParams(data);
-            return (await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params.toString() })).json();
-        }
-        async function apiGet(url, token) {
-            return (await fetch(url, { headers: token ? { 'Authorization': 'Bearer ' + token } : {} })).json();
-        }
-        function showResponse(data) { document.getElementById('response').textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2); }
-        async function register(e) { e.preventDefault();
-            const data = await apiPost('/auth/register', { username: document.getElementById('reg-username').value, password: document.getElementById('reg-password').value });
-            showResponse(data); if (data.status === 'ok') { document.getElementById('login-username').value = document.getElementById('reg-username').value; document.getElementById('reg-username').value = ''; document.getElementById('reg-password').value = ''; }
-        }
-        async function login(e) { e.preventDefault();
-            const data = await apiPost('/auth/login', { username: document.getElementById('login-username').value, password: document.getElementById('login-password').value });
-            showResponse(data); if (data.status === 'ok' && data.token) saveToken(data.token);
-        }
-        async function verifyToken() {
-            if (!getToken()) { showResponse('No token.'); return; }
-            showResponse(await apiGet('/auth/verify', getToken()));
-        }
-        async function logout() {
-            const token = getToken(); if (!token) { showResponse('No token.'); return; }
-            const data = await (await fetch('/auth/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } })).json();
-            showResponse(data); if (data.status === 'ok') saveToken(token, true); }
-        if (currentToken) { const b = document.getElementById('token-box'); b.textContent = currentToken; b.style.display = 'block'; document.getElementById('token-status').textContent = 'Token restored.'; }
-    </script>
-</body>
-</html>
-ENDOFFILE
+cp samples/phase2/index.html nginx/index.html
 ```
 
 **頁面架構**：
 
 ```
+
 ┌─────────────────────────────────────────────────┐
 │  Browser → Nginx → auth-service → PG & Redis   │  架構狀態列（綠=正常）
 ├────────────────────┬────────────────────────────┤
@@ -880,74 +761,8 @@ EOF
 ### 2.5.1 更新 DemoApplication.java — 加入 /db-check 端點
 
 ```bash
-cat > spring-boot-demo/src/main/java/com/example/demo/DemoApplication.java << 'EOF'
-package com.example.demo;
-
-import java.util.Map;
-
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.core.env.Environment;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
-
-@SpringBootApplication
-@RestController
-public class DemoApplication {
-
-    private final Environment env;
-    private final JdbcTemplate jdbc;
-    private final StringRedisTemplate redis;
-
-    public DemoApplication(Environment env, JdbcTemplate jdbc, StringRedisTemplate redis) {
-        this.env = env;
-        this.jdbc = jdbc;
-        this.redis = redis;
-    }
-
-    public static void main(String[] args) {
-        SpringApplication.run(DemoApplication.class, args);
-    }
-
-    @GetMapping("/")
-    public String hello() {
-        return "Hello from Spring Boot!";
-    }
-
-    @GetMapping("/config")
-    public Map<String, Object> config() {
-        return Map.ofEntries(
-            Map.entry("service", env.getProperty("spring.application.name", "unknown")),
-            Map.entry("APP_ENV", env.getProperty("APP_ENV", "undefined")),
-            Map.entry("APP_VERSION", env.getProperty("APP_VERSION", "undefined")),
-            Map.entry("LOG_LEVEL", env.getProperty("LOG_LEVEL", "undefined")),
-            Map.entry("CACHE_TTL", env.getProperty("CACHE_TTL", "undefined"))
-        );
-    }
-
-    @GetMapping("/db-check")
-    public Map<String, Object> dbCheck() {
-        String pgStatus = "FAIL";
-        String redisStatus = "FAIL";
-        try {
-            jdbc.queryForObject("SELECT 1", Integer.class);
-            pgStatus = "OK";
-        } catch (Exception e) {
-            pgStatus = e.getMessage();
-        }
-        try {
-            redis.opsForValue().set("ping", "pong");
-            String pong = redis.opsForValue().get("ping");
-            redisStatus = "OK (ping=" + pong + ")";
-        } catch (Exception e) {
-            redisStatus = e.getMessage();
-        }
-        return Map.of("postgresql", pgStatus, "redis", redisStatus);
-    }
-}
-EOF
+cp samples/phase2/DemoApplication.java \
+   spring-boot-demo/src/main/java/com/example/demo/DemoApplication.java
 ```
 
 **`/db-check` 端點說明**：
