@@ -133,6 +133,12 @@ public class AuthController {
                 "expires_in", jwtUtil.getAccessTokenExpMs() / 1000);
     }
 
+    @PostMapping("/unlock")
+    public Map<String, Object> unlock(@RequestParam String username) {
+        redis.delete("login_fail:" + username);
+        return Map.of("status", "ok", "message", "rate limit cleared");
+    }
+
     @GetMapping("/health")
     public Map<String, Object> health() {
         return Map.of("status", "ok", "service", "auth-service");

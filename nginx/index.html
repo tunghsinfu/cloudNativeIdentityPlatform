@@ -648,8 +648,10 @@ docker compose exec redis redis-cli TTL "user:alice"
                 'Redis key <code>login_fail:' + username + '</code> reached 5.',
                 'Now logging in with correct password to test <strong>Cache-Aside</strong>...'
             ]);
-            // Cache-Aside: login with correct password
-            await sleep(600);
+            // Clear rate limit counter, then cache-aside login
+            await sleep(300);
+            await apiPost('/auth/v1/unlock', { username });
+            await sleep(200);
             document.getElementById('login-username').value = username;
             document.getElementById('login-password').value = password;
             const loginAgain = await apiPost('/auth/v1/login', { username, password });
@@ -661,7 +663,7 @@ docker compose exec redis redis-cli TTL "user:alice"
                 const cached = loginAgain.from_cache ? ' (from Redis cache)' : ' (from PostgreSQL)';
                 showInterpretation('success', 'Demo complete: Rate limit & Cache-Aside' + cached, [
                     '<strong>Rate Limit:</strong> 5 wrong passwords &rarr; <code>login_fail:' + username + '</code> = 5 &rarr; 6th blocked (429).',
-                    'Successful login afterwards cleared the counter (<code>DEL login_fail:' + username + '</code>).',
+                    'Called <code>/auth/v1/unlock</code> to clear the counter (<code>DEL login_fail:' + username + '</code>).',
                     '',
                     '<strong>Cache-Aside:</strong> User data loaded' + cached + '.',
                     '<code>UserRepository.findByUsername()</code>: check Redis <code>user:' + username + '</code> &rarr;',
