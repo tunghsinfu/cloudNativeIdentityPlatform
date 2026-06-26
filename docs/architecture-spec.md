@@ -13,22 +13,22 @@
 ```
                          User
                            |
-                       [Nginx]  (80)
-                     API Gateway
+                        [Nginx]  (28080)
+                      API Gateway
                            |
               +------------+------------+
               |            |            |
          /auth/*      /user/*       /api/*
               |            |            |
-        [auth-service] [user-service] [app] (legacy demo)
-          :8081          :8082        :8080
+         [auth-service] [user-service] [app] (legacy demo)
+           :18081         :8082        :18080
               |            |
               +-----+------+
                     |
           +---------+---------+
           |         |         |
       [Redis]   [PostgreSQL]  |
-    6379        5432          |
+     16379       15432         |
     (blacklist  (users,      |
      rate-limit  profiles)   |
      cache)                  |
@@ -40,11 +40,11 @@
 
 | 服務 | 角色 | 技術棧 | 埠號 |
 |------|------|--------|------|
-| `nginx` | API Gateway / Reverse Proxy | Nginx (Alpine) | 80 |
-| `auth-service` | 身份認證（JWT 簽發/驗證） | Spring Boot 3 + Spring Security | 8081 |
+| `nginx` | API Gateway / Reverse Proxy | Nginx (Alpine) | 28080 |
+| `auth-service` | 身份認證（JWT 簽發/驗證） | Spring Boot 3 + Spring Security | 18081 |
 | `user-service` | 使用者 CRUD | Spring Boot 3 | 8082 |
-| `postgres` | 主資料庫 | PostgreSQL 16 Alpine | 5432 |
-| `redis` | 快取 / Blacklist / Rate Limit | Redis 7 Alpine | 6379 |
+| `postgres` | 主資料庫 | PostgreSQL 16 Alpine | 15432 |
+| `redis` | 快取 / Blacklist / Rate Limit | Redis 7 Alpine | 16379 |
 | `kafka` | 事件驅動（可選） | Kafka + Zookeeper | 9092 |
 | `prometheus` | 指標收集 | Prometheus | 9090 |
 | `grafana` | 可視化儀表板 | Grafana | 3000 |

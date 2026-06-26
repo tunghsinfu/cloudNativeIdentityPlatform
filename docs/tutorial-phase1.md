@@ -319,9 +319,9 @@ docker build -t spring-demo .
 docker image ls spring-demo
 # 觀察映像大小（約 150MB）
 
-docker run --rm -p 8080:8080 spring-demo &
+docker run --rm -p 18080:8080 spring-demo &
 sleep 15   # 等待 Spring Boot 啟動
-curl http://localhost:8080/
+curl http://localhost:18080/
 # 輸出：Hello from Spring Boot!
 kill %1 2>/dev/null
 ```
@@ -451,7 +451,7 @@ services:
     build: .
     container_name: spring-demo
     ports:
-      - "8080:8080"
+      - "18080:8080"
     environment:
       - APP_ENV=${APP_ENV}
       - APP_VERSION=${APP_VERSION}
@@ -465,7 +465,7 @@ EOF
 
 ```bash
 docker compose up -d
-curl http://localhost:8080/config
+curl http://localhost:18080/config
 # 輸出：{"APP_ENV":"development","APP_VERSION":"1.0.0"}
 
 docker compose down
@@ -511,7 +511,7 @@ services:
     build: .
     container_name: spring-demo
     ports:
-      - "8080:8080"
+      - "18080:8080"
     environment:
       - APP_ENV=${APP_ENV}
       - APP_VERSION=${APP_VERSION}
@@ -593,7 +593,7 @@ services:
         APP_NAME: spring-demo-backend
     container_name: spring-demo
     ports:
-      - "8080:8080"
+      - "18080:8080"
     environment:
       - APP_ENV=${APP_ENV}
       - APP_VERSION=${APP_VERSION}
@@ -614,7 +614,7 @@ cp samples/phase1/DemoApplication.java \
 
 ```bash
 docker compose up -d --build
-curl http://localhost:8080/config
+curl http://localhost:18080/config
 # 預期輸出：
 # {
 #   "service": "spring-demo-backend",
@@ -627,7 +627,7 @@ curl http://localhost:8080/config
 # 測試 fallback 行為：暫時註解掉 .env 中的 LOG_LEVEL
 # 編輯 .env 移除 LOG_LEVEL 那行，然後重啟：
 docker compose up -d --build
-curl http://localhost:8080/config
+curl http://localhost:18080/config
 # LOG_LEVEL 應顯示 "INFO"（來自 Docker Compose 的 ${LOG_LEVEL:-INFO}）
 
 docker compose down
@@ -721,11 +721,11 @@ docker build -t spring-demo .
 docker compose up -d
 
 # 4. 測試 API
-curl http://localhost:8080/
+curl http://localhost:18080/
 # 預期：Hello from Spring Boot!
 
 # 5. 測試 config 端點
-curl http://localhost:8080/config
+curl http://localhost:18080/config
 # 預期：顯示所有環境變數
 
 # 6. 清理

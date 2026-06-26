@@ -104,7 +104,7 @@
                         <div class="step-content">
                             <div class="step-title">Register a user</div>
                             <div class="step-desc">Creates a record in PostgreSQL <span class="tag green">DB Write</span></div>
-                            <div class="step-detail">The <code>/auth/register</code> endpoint inserts <code>username</code> and <code>password</code> into the <code>users</code> table in PostgreSQL. If the username already exists, the DB returns a <code>duplicate key</code> error.</div>
+                            <div class="step-detail">The <code>/auth/v1/register</code> endpoint BCrypt-hashes the password and inserts <code>username</code>, <code>hash</code>, and <code>role</code> into the <code>users</code> table in PostgreSQL. If the username already exists, it returns a <code>BAD_REQUEST</code> error.</div>
                         </div>
                     </div>
                     <div class="step" id="step-2" onclick="scrollToForm('login')">
@@ -112,7 +112,7 @@
                         <div class="step-content">
                             <div class="step-title">Login & get JWT</div>
                             <div class="step-desc">Verifies credentials, returns a signed token <span class="tag blue">Token Issued</span></div>
-                            <div class="step-detail">The <code>/auth/login</code> endpoint queries PostgreSQL for the user. If the password matches, <code>JwtUtil</code> creates a JWT signed with HMAC-SHA256. The token contains the <code>username</code>, issue time (<code>iat</code>), and expiration (<code>exp</code>). The token is returned to the browser.</div>
+                            <div class="step-detail">The <code>/auth/v1/login</code> endpoint queries PostgreSQL, verifies the password via <code>BCryptPasswordEncoder.matches()</code>, and issues a signed JWT (access token, 15 min) and an opaque refresh token (stored in Redis, 7 days). The JWT now includes <code>jti</code> (unique ID), <code>sub</code> (username), and <code>role</code> claims.</div>
                         </div>
                     </div>
                     <div class="step" id="step-3" onclick="">
@@ -120,7 +120,7 @@
                         <div class="step-content">
                             <div class="step-title">Verify token</div>
                             <div class="step-desc">Checks signature & Redis blacklist <span class="tag blue">Token Validated</span></div>
-                            <div class="step-detail">The <code>/auth/verify</code> endpoint does three things: (1) Parses the <code>Authorization: Bearer &lt;token&gt;</code> header, (2) Checks if the token <code>jti</code> is in Redis <code>blacklist:{jti}</code> (would mean revoked), (3) Verifies the JWT signature and expiration. Returns the username if valid.</div>
+                            <div class="step-detail">The <code>/auth/v1/verify</code> endpoint does three things: (1) The <code>JwtAuthenticationFilter</code> parses the <code>Authorization: Bearer &lt;token&gt;</code> header, (2) Checks if the token's <code>jti</code> is in Redis <code>blacklist:{jti}</code> (would mean revoked), (3) Sets the Spring Security context with username and role. The controller returns these from the authenticated context.</div>
                         </div>
                     </div>
                     <div class="step" id="step-4" onclick="">
@@ -128,7 +128,7 @@
                         <div class="step-content">
                             <div class="step-title">Logout (revoke token)</div>
                             <div class="step-desc">Adds token to Redis blacklist <span class="tag yellow">Redis Write</span></div>
-                            <div class="step-detail">The <code>/auth/logout</code> endpoint stores the token in Redis with key <code>blacklist:&lt;token&gt;</code>. The next <code>/auth/verify</code> call will find this key and reject the token. This is how stateless JWT tokens are revoked without a server-side session store.</div>
+                            <div class="step-detail">The <code>/auth/v1/logout</code> endpoint extracts the <code>jti</code> from the SecurityContext (set by <code>JwtAuthenticationFilter</code>) and stores it in Redis as <code>blacklist:{jti}</code>. The next <code>/auth/v1/verify</code> call will find this key and reject the token. This is how stateless JWT revocation works.</div>
                         </div>
                     </div>
                     <div class="step" id="step-5" onclick="">
@@ -148,7 +148,7 @@
             <!-- Register -->
             <div class="card" id="form-register">
                 <h2>Register <span class="tag green">Step 1</span></h2>
-                <p class="helper">Creates a user record in <strong>PostgreSQL</strong>. The password is stored directly (plain text in Phase 3; will be BCrypt-hashed in Phase 4).</p>
+                <p class="helper">Creates a user record in <strong>PostgreSQL</strong>. The password is BCrypt-hashed by <code>BCryptPasswordEncoder</code> before storage.</p>
                 <form id="register-form" onsubmit="return register(event)">
                     <label for="reg-username">Username</label>
                     <input type="text" id="reg-username" placeholder="alice" required>
@@ -163,7 +163,7 @@
             <!-- Login -->
             <div class="card" id="form-login">
                 <h2>Login <span class="tag blue">Step 2</span></h2>
-                <p class="helper">Authenticates against <strong>PostgreSQL</strong>. On success, <strong>auth-service</strong> signs a JWT with HMAC-SHA256 and returns it.</p>
+                <p class="helper">Authenticates against <strong>PostgreSQL</strong> using BCrypt. On success, returns an <strong>access token</strong> (JWT, 15 min) + <strong>refresh token</strong> (opaque UUID in Redis, 7 days).</p>
                 <form id="login-form" onsubmit="return login(event)">
                     <label for="login-username">Username</label>
                     <input type="text" id="login-username" placeholder="alice" required>
@@ -182,10 +182,14 @@
     <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <h2 style="margin:0;">JWT Token <span class="tag blue">Steps 3-5</span></h2>
-            <button class="btn btn-success btn-sm" onclick="verifyToken()">Verify Token</button>
+            <div class="btn-group" style="margin:0;">
+                <button class="btn btn-success btn-sm" onclick="verifyToken()">Verify</button>
+                <button class="btn btn-warning btn-sm" onclick="refreshToken()">Refresh</button>
+            </div>
         </div>
-        <p class="helper">The JWT is stored in your browser's <code>localStorage</code>. Use <strong>Verify Token</strong> to check its validity against auth-service. Login to get a token, <strong>Logout</strong> (above) to blacklist it in Redis.</p>
+        <p class="helper">The JWT is stored in your browser's <code>localStorage</code>. Use <strong>Verify</strong> to check validity, <strong>Refresh</strong> to get a new access/refresh token pair. Login to get a token, <strong>Logout</strong> (above) to blacklist it in Redis.</p>
         <div id="token-box" class="token-box"></div>
+        <div id="refresh-token-box" class="token-box" style="display:none;"></div>
         <div id="token-status" class="helper" style="font-weight:600;"></div>
     </div>
 
@@ -237,6 +241,7 @@
 
         function clearToken() {
             saveToken('');
+            localStorage.removeItem('refresh_token');
             showResponse('Token cleared from browser storage.', null);
             showInterpretation(null);
         }
@@ -303,14 +308,14 @@
             const username = document.getElementById('reg-username').value.trim();
             const password = document.getElementById('reg-password').value;
             if (!username || !password) return;
-            const data = await apiPost('/auth/register', { username, password });
+            const data = await apiPost('/auth/v1/register', { username, password });
             showResponse(data);
             if (data.status === 'ok') {
                 setStepState(1, 'done');
                 showInterpretation('success', 'User created in PostgreSQL', [
-                    'INSERT INTO users (username, password) VALUES (?, ?)',
-                    'The <strong>auth-service</strong> sent a SQL INSERT to <strong>PostgreSQL</strong>.',
-                    'The password is stored as plain text (this will be upgraded to BCrypt in Phase 4).',
+                    'INSERT INTO users (username, password, role) VALUES (?, ?, ?)',
+                    'The <strong>auth-service</strong> BCrypt-hashed the password and sent a SQL INSERT to <strong>PostgreSQL</strong>.',
+                    'The password is stored as a BCrypt hash (not plain text).',
                     'Try logging in with the same credentials now.'
                 ]);
                 document.getElementById('reg-username').value = '';
@@ -331,19 +336,21 @@
             const username = document.getElementById('login-username').value.trim();
             const password = document.getElementById('login-password').value;
             if (!username || !password) return;
-            const data = await apiPost('/auth/login', { username, password });
+            const data = await apiPost('/auth/v1/login', { username, password });
             showResponse(data);
-            if (data.status === 'ok' && data.token) {
-                saveToken(data.token);
+            if (data.status === 'ok' && data.access_token) {
+                saveToken(data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token || '');
                 setStepState(2, 'done');
                 setStepState(3, 'active');
-                showInterpretation('success', 'JWT issued by auth-service', [
-                    'SELECT password FROM users WHERE username = ? &rarr; password matched.',
+                showInterpretation('success', 'JWT + Refresh Token issued', [
+                    'SELECT password FROM users WHERE username = ? &rarr; BCrypt.matches() = true.',
                     '<strong>auth-service</strong> (JwtUtil) created a JWT:',
                     '&bull; Algorithm: <strong>HMAC-SHA256</strong> (HS256)',
-                    '&bull; Claims: <code>sub</code>=' + username + ', <code>iat</code>, <code>exp</code>',
-                    '&bull; Signed with the secret from <code>$JWT_SECRET</code>',
-                    'The token is now stored in your browser. Click <strong>Verify</strong> to check it.'
+                    '&bull; Claims: <code>jti</code> (UUID), <code>sub</code>=' + username + ', <code>role</code>=USER, <code>iat</code>, <code>exp</code>',
+                    '&bull; Access token expires in <strong>15 minutes</strong>',
+                    '&bull; Refresh token (opaque UUID) stored in Redis, expires in <strong>7 days</strong>',
+                    'The access token is now stored in your browser. Click <strong>Verify</strong> to check it.'
                 ]);
                 setArch('arch-auth', true);
             } else {
@@ -366,24 +373,26 @@
                 ]);
                 return;
             }
-            const data = await apiGet('/auth/verify', token);
+            const data = await apiGet('/auth/v1/verify', token);
             showResponse(data);
             if (data.status === 'ok') {
                 setStepState(3, 'done');
                 setStepState(4, 'active');
                 const decoded = decodeJwt(token);
                 showInterpretation('success', 'Token is valid &mdash; 3 checks passed', [
-                    '1. <strong>Redis blacklist check:</strong> <code>blacklist:&lt;token&gt;</code> not found &rarr; token not revoked.',
+                    '1. <strong>Redis blacklist check:</strong> <code>blacklist:' + data.jti + '</code> not found &rarr; token not revoked.',
                     '2. <strong>JWT signature:</strong> HMAC-SHA256 verified with <code>$JWT_SECRET</code> &rarr; token not tampered.',
                     '3. <strong>Expiration:</strong> <code>exp</code> claim &gt; now &rarr; token not expired.',
                     'Username: <strong>' + data.username + '</strong>',
+                    'Role: <strong>' + data.role + '</strong>',
+                    'JTI: <code>' + data.jti + '</code>',
                     decoded ? 'Token expires: <strong>' + new Date(decoded.exp * 1000).toLocaleTimeString() + '</strong>' : ''
                 ].filter(Boolean));
                 setArch('arch-redis', true);
             } else if (data.message === 'token revoked') {
                 setStepState(5, 'done');
                 showInterpretation('error', 'Token rejected &mdash; blacklisted', [
-                    'The token was found in <strong>Redis</strong> <code>blacklist:&lt;token&gt;</code>.',
+                    'The token\'s <strong>jti</strong> was found in <strong>Redis</strong> <code>blacklist:&lt;jti&gt;</code>.',
                     'This means the token was revoked via <strong>Logout</strong>.',
                     'Even though the JWT signature is valid and not expired, the blacklist takes priority.',
                     'This is the core of stateless token revocation.'
@@ -406,7 +415,7 @@
                 showInterpretation('warn', 'No token available', ['You need to <strong>Login</strong> first.']);
                 return;
             }
-            const res = await fetch('/auth/logout', {
+            const res = await fetch('/auth/v1/logout', {
                 method: 'POST',
                 headers: { 'Authorization': 'Bearer ' + token }
             });
@@ -416,10 +425,12 @@
                 setStepState(4, 'done');
                 setStepState(5, 'active');
                 saveToken(token, true);
+                localStorage.removeItem('refresh_token');
                 showInterpretation('warn', 'Token blacklisted in Redis', [
-                    'SET blacklist:&lt;token&gt; = "1" &rarr; stored in <strong>Redis</strong>.',
+                    'SET blacklist:&lt;jti&gt; = "1" &rarr; stored in <strong>Redis</strong> with TTL = token expiry.',
                     'The token is now revoked. Even though it has a valid signature and is not expired,',
-                    'the next <code>/auth/verify</code> will reject it because <strong>Redis</strong> has the blacklist key.',
+                    'the next <code>/auth/v1/verify</code> will reject it because <strong>Redis</strong> has the blacklist key.',
+                    'The refresh token has also been removed from local storage.',
                     'Click <strong>Verify Token</strong> now to see it fail &mdash; this is step 5 of the guide.'
                 ]);
             } else {
@@ -427,17 +438,42 @@
             }
         }
 
+        async function refreshToken() {
+            const refreshToken = localStorage.getItem('refresh_token');
+            if (!refreshToken) {
+                showResponse('No refresh token. Login first.');
+                showInterpretation('warn', 'No refresh token', ['You need to <strong>Login</strong> first to get a refresh token.']);
+                return;
+            }
+            const data = await apiPost('/auth/v1/refresh', { refresh_token: refreshToken });
+            showResponse(data);
+            if (data.status === 'ok' && data.access_token) {
+                saveToken(data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token || '');
+                showInterpretation('success', 'Tokens refreshed', [
+                    'The old refresh token was looked up in <strong>Redis</strong> and deleted.',
+                    'A new access token (15 min) and refresh token (7 days) were issued.',
+                    'Old tokens (access + refresh) are no longer valid.'
+                ]);
+                const box = document.getElementById('refresh-token-box');
+                box.textContent = 'refresh_token: ' + data.refresh_token;
+                box.style.display = 'block';
+            } else {
+                showInterpretation('error', 'Refresh failed', [
+                    data.message || 'Unknown error.',
+                    'Your refresh token may be expired (7 days) or invalid. <strong>Login</strong> again to get new tokens.'
+                ]);
+            }
+        }
+
         async function loadHealth() {
-            const data = await apiGet('/auth/health');
+            const data = await apiGet('/auth/v1/health');
             showResponse(data);
             setArch('arch-auth', true);
-            setArch('arch-pg', data.postgresql === 'OK');
-            setArch('arch-redis', data.redis === 'OK');
             showInterpretation('info', 'Health check results', [
-                'Service: <strong>' + (data.service || 'unknown') + '</strong>',
-                'PostgreSQL: <strong>' + data.postgresql + '</strong> (query: <code>SELECT 1</code>)',
-                'Redis: <strong>' + data.redis + '</strong> (command: <code>SET/GET ping</code>)',
-                'All checks pass through Nginx &rarr; auth-service &rarr; databases.'
+                'Service: <strong>' + (data.service || 'auth-service') + '</strong>',
+                'Status: <strong>' + (data.status || 'unknown') + '</strong>',
+                'Health check passes through Nginx &rarr; auth-service (with Spring Security).'
             ]);
         }
 
@@ -471,7 +507,7 @@
             document.getElementById('reg-username').value = username;
             document.getElementById('reg-password').value = password;
             await sleep(800);
-            await apiPost('/auth/register', { username, password });
+            await apiPost('/auth/v1/register', { username, password });
             setStepState(1, 'done');
 
             // Step 2: Login
@@ -479,16 +515,17 @@
             document.getElementById('login-username').value = username;
             document.getElementById('login-password').value = password;
             await sleep(800);
-            const loginData = await apiPost('/auth/login', { username, password });
-            if (loginData.status === 'ok' && loginData.token) {
-                saveToken(loginData.token);
+            const loginData = await apiPost('/auth/v1/login', { username, password });
+            if (loginData.status === 'ok' && loginData.access_token) {
+                saveToken(loginData.access_token);
+                localStorage.setItem('refresh_token', loginData.refresh_token || '');
             }
             setStepState(2, 'done');
             setStepState(3, 'active');
 
             // Step 3: Verify
             await sleep(800);
-            const verifyData = await apiGet('/auth/verify', getToken());
+            const verifyData = await apiGet('/auth/v1/verify', getToken());
             showResponse(verifyData);
             if (verifyData.status === 'ok') {
                 setStepState(3, 'done');
@@ -502,12 +539,13 @@
 
             // Step 4: Logout
             await sleep(1000);
-            await fetch('/auth/logout', {
+            await fetch('/auth/v1/logout', {
                 method: 'POST',
                 headers: { 'Authorization': 'Bearer ' + getToken() }
             });
             const revokedToken = getToken();
             saveToken(revokedToken, true);
+            localStorage.removeItem('refresh_token');
             showInterpretation('warn', 'Demo: Token revoked in Redis', [
                 'Token has been blacklisted. Now verifying again to confirm rejection...'
             ]);
@@ -516,7 +554,7 @@
 
             // Step 5: Verify should fail
             await sleep(1000);
-            const failData = await apiGet('/auth/verify', revokedToken);
+            const failData = await apiGet('/auth/v1/verify', revokedToken);
             showResponse(failData);
             if (failData.message === 'token revoked') {
                 setStepState(5, 'done');
@@ -546,6 +584,8 @@
             if (demoRunning) return;
             resetSteps();
             saveToken('');
+            localStorage.removeItem('refresh_token');
+            document.getElementById('refresh-token-box').style.display = 'none';
             document.getElementById('reg-username').value = '';
             document.getElementById('reg-password').value = '';
             document.getElementById('login-username').value = '';

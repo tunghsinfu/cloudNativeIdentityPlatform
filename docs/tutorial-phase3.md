@@ -126,7 +126,7 @@ public class AuthApplication {
     @EventListener(ApplicationReadyEvent.class)
     public void onReady() {
         log.info("Auth service started on port {}",
-            System.getenv().getOrDefault("SERVER_PORT_AUTH", "8081"));
+            System.getenv().getOrDefault("SERVER_PORT_AUTH", "18081"));
     }
 }
 EOF
@@ -373,7 +373,7 @@ services:
         APP_NAME: spring-demo-backend
     container_name: spring-demo
     ports:
-      - "${SERVER_PORT_APP:-8080}:8080"
+      - "${SERVER_PORT_APP:-18080}:8080"
     environment:
       - APP_ENV=${APP_ENV}
       - APP_VERSION=${APP_VERSION}
@@ -398,7 +398,7 @@ services:
         APP_NAME: auth-service-jwt
     container_name: auth-service
     ports:
-      - "${SERVER_PORT_AUTH:-8081}:8081"
+      - "${SERVER_PORT_AUTH:-18081}:8081"
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - CACHE_TTL=${AUTH_CACHE_TTL:-60}
@@ -419,7 +419,7 @@ services:
     build: ./nginx
     container_name: nginx-gateway
     ports:
-      - "80:80"
+      - "28080:80"
     depends_on:
       - app
       - auth
@@ -435,7 +435,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "15432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -451,7 +451,7 @@ services:
     image: redis:7-alpine
     container_name: demo-redis
     ports:
-      - "6379:6379"
+      - "16379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -480,7 +480,7 @@ auth:
       APP_NAME: auth-service-jwt    # Dockerfile ARG → ENV
   container_name: auth-service
   ports:
-    - "${SERVER_PORT_AUTH:-8081}:8081"  # host 埠可自訂，預設 8081
+    - "${SERVER_PORT_AUTH:-18081}:8081"  # host 埠可自訂，預設 18081
   environment:
     - CACHE_TTL=${AUTH_CACHE_TTL:-60}  # auth 使用較短的 TTL（60s）
     - JWT_SECRET=${JWT_SECRET}         # 來自 .env 的 JWT 密鑰
@@ -518,7 +518,7 @@ docker compose up -d nginx
 **Phase 3 完成後，瀏覽器操作流程**：
 
 ```
-1. 打開 http://localhost/
+1. 打開 http://localhost:28080/
 2. 填寫 Username + Password → 點 Register
 3. 填寫相同帳密 → 點 Login → token 自動顯示
 4. 點 Verify Token → 顯示 username 與 token 檢查結果
@@ -530,33 +530,33 @@ docker compose up -d nginx
 
 ### 3.4.1 完整測試腳本
 
-除了透過瀏覽器操作（http://localhost/），也可以用 curl 驗證：
+除了透過瀏覽器操作（http://localhost:28080/），也可以用 curl 驗證：
 echo ">>> /auth/verify"
-curl -s http://localhost/auth/verify \
+curl -s http://localhost:28080/auth/verify \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 # 預期：{"status":"ok","username":"alice"}
 
 # 10. 使用無效 token
 echo ">>> /auth/verify (invalid token)"
-curl -s http://localhost/auth/verify \
+curl -s http://localhost:28080/auth/verify \
   -H "Authorization: Bearer invalid-token" | python3 -m json.tool
 # 預期：{"status":"error","message":"invalid token"}
 
 # 11. 登出
 echo ">>> /auth/logout"
-curl -s -X POST http://localhost/auth/logout \
+curl -s -X POST http://localhost:28080/auth/logout \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 # 預期：{"status":"ok","message":"logged out"}
 
 # 12. 登出後驗證（應失敗）
 echo ">>> /auth/verify after logout"
-curl -s http://localhost/auth/verify \
+curl -s http://localhost:28080/auth/verify \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 # 預期：{"status":"error","message":"token revoked"}
 
 # 13. 錯誤密碼登入
 echo ">>> /auth/login (wrong password)"
-curl -s -X POST http://localhost/auth/login \
+curl -s -X POST http://localhost:28080/auth/login \
   -d "username=alice&password=WrongPass" | python3 -m json.tool
 # 預期：{"status":"error","message":"invalid credentials"}
 
@@ -568,7 +568,7 @@ echo "=== Phase 3 驗證完成 ==="
 
 ```bash
 # 登入取得 token
-TOKEN=$(curl -s -X POST http://localhost/auth/login \
+TOKEN=$(curl -s -X POST http://localhost:28080/auth/login \
   -d "username=alice&password=Str0ng!Pass" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
 # 登出前：Redis 無此 key
@@ -576,7 +576,7 @@ docker exec demo-redis redis-cli EXISTS "blacklist:$TOKEN"
 # 輸出：(integer) 0
 
 # 登出
-curl -s -X POST http://localhost/auth/logout \
+curl -s -X POST http://localhost:28080/auth/logout \
   -H "Authorization: Bearer $TOKEN"
 
 # 登出後：Redis 有此 key
@@ -645,7 +645,7 @@ Phase 3 是刻意簡化的實作，有以下已知限制（將在 Phase 4 解決
 **瀏覽器操作路徑摘要**：
 
 ```
-http://localhost/
+http://localhost:28080/
        │
        ├── 架構狀態列 → 顯示所有服務連線狀態
        ├── Register   → POST /auth/register  → PostgreSQL INSERT

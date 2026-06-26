@@ -151,9 +151,9 @@
                 <p class="helper">Creates a user record in <strong>PostgreSQL</strong>. The password is stored directly (plain text in Phase 3; will be BCrypt-hashed in Phase 4).</p>
                 <form id="register-form" onsubmit="return register(event)">
                     <label for="reg-username">Username</label>
-                    <input type="text" id="reg-username" placeholder="alice" required>
+                    <input type="text" id="reg-username" required>
                     <label for="reg-password">Password</label>
-                    <input type="password" id="reg-password" placeholder="Str0ng!Pass" required>
+                    <input type="password" id="reg-password" required>
                     <div class="btn-group">
                         <button type="submit" class="btn btn-success">Register</button>
                     </div>
@@ -166,9 +166,9 @@
                 <p class="helper">Authenticates against <strong>PostgreSQL</strong>. On success, <strong>auth-service</strong> signs a JWT with HMAC-SHA256 and returns it.</p>
                 <form id="login-form" onsubmit="return login(event)">
                     <label for="login-username">Username</label>
-                    <input type="text" id="login-username" placeholder="alice" required>
+                    <input type="text" id="login-username" required>
                     <label for="login-password">Password</label>
-                    <input type="password" id="login-password" placeholder="Str0ng!Pass" required>
+                    <input type="password" id="login-password" required>
                     <div class="btn-group">
                         <button type="submit" class="btn btn-primary">Login</button>
                         <button type="button" class="btn btn-danger btn-sm" onclick="logout()">Logout</button>

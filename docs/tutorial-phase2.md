@@ -39,7 +39,7 @@ services:
         APP_NAME: spring-demo-backend
     container_name: spring-demo
     ports:
-      - "8080:8080"
+      - "18080:8080"
     environment:
       - APP_ENV=${APP_ENV}
       - APP_VERSION=${APP_VERSION}
@@ -61,7 +61,7 @@ EOF
 - `build.context` 指向 `spring-boot-demo` 目錄（Phase 1 的 Spring Boot 專案）。
 - `build.args` 傳入 build-time 參數（Dockerfile 中的 `ARG APP_NAME`）。
 - `container_name` 指定固定的 container 名稱，方便識別。
-- `ports: "8080:8080"` 將 container 的 8080 埠對應到 host 的 8080 埠。
+- `ports: "18080:8080"` 將 container 的 8080 埠對應到 host 的 18080 埠。
 - `restart: unless-stopped` 當 Docker daemon 啟動時自動重啟（除非手動 `docker compose stop`）。
 - `volumes` 和 `networks` 目前是空的占位符，後續步驟會用到。
 
@@ -69,7 +69,7 @@ EOF
 
 ```bash
 docker compose up -d        # 背景啟動
-curl http://localhost:8080/  # 輸出：Hello from Spring Boot!
+curl http://localhost:18080/  # 輸出：Hello from Spring Boot!
 docker compose down          # 停止
 ```
 
@@ -87,7 +87,7 @@ services:
         APP_NAME: spring-demo-backend
     container_name: spring-demo
     ports:
-      - "8080:8080"
+      - "18080:8080"
     environment:
       - APP_ENV=${APP_ENV}
       - APP_VERSION=${APP_VERSION}
@@ -263,7 +263,7 @@ services:
         APP_NAME: spring-demo-backend
     container_name: spring-demo
     ports:
-      - "${SERVER_PORT_APP:-8080}:8080"
+      - "${SERVER_PORT_APP:-18080}:8080"
     environment:
       - APP_ENV=${APP_ENV}
       - APP_VERSION=${APP_VERSION}
@@ -277,7 +277,7 @@ services:
     build: ./nginx
     container_name: nginx-gateway
     ports:
-      - "80:80"
+      - "28080:80"
     depends_on:
       - app
     restart: unless-stopped
@@ -297,26 +297,26 @@ EOF
 - `build: ./nginx` 使用 `nginx/` 目錄中的 Dockerfile 建構 Nginx 映像
 - `depends_on: - app` 確保 app 先啟動（但不等於 app 就緒，只是啟動順序）
 - Nginx 的 `proxy_pass http://app:8080` 使用 service name `app` 作為後端位址
-- `${SERVER_PORT_APP:-8080}` 讓 host 埠號可以透過 `.env` 自訂，預設為 8080
+- `${SERVER_PORT_APP:-18080}` 讓 host 埠號可以透過 `.env` 自訂，預設為 18080
 
 ### 2.2.5 驗證
 
 ```bash
 docker compose up -d --build
 
-# 1. 開啟瀏覽器 http://localhost/
+# 1. 開啟瀏覽器 http://localhost:28080/
 #    應該看到互動式頁面，架構狀態列顯示各服務狀態
 
 # 2. 透過 curl 確認後端可達
-curl http://localhost/api/
+curl http://localhost:28080/api/
 # 輸出：Hello from Spring Boot!
 
 # 3. 透過 Nginx 取得 config
-curl http://localhost/api/config
+curl http://localhost:28080/api/config
 # 輸出：{ "service": "spring-demo-backend", ... }
 
 # 4. 直接測試 /api/ 端點確保代理正確
-curl http://localhost/api/hello
+curl http://localhost:28080/api/hello
 # 預期：404（因為 Spring Boot 沒有 /hello，但 Nginx 代理正確轉發）
 
 docker compose down
@@ -338,7 +338,7 @@ services:
         APP_NAME: spring-demo-backend
     container_name: spring-demo
     ports:
-      - "${SERVER_PORT_APP:-8080}:8080"
+      - "${SERVER_PORT_APP:-18080}:8080"
     environment:
       - APP_ENV=${APP_ENV}
       - APP_VERSION=${APP_VERSION}
@@ -358,7 +358,7 @@ services:
     build: ./nginx
     container_name: nginx-gateway
     ports:
-      - "80:80"
+      - "28080:80"
     depends_on:
       - app
     restart: unless-stopped
@@ -373,7 +373,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "15432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -401,7 +401,7 @@ EOF
 | `healthcheck` | Docker 定期檢查 container 是否就緒。`service_healthy` 讓 `depends_on` 等到就緒才啟動相依服務 |
 | `pg_isready` | PostgreSQL 內建工具，確認資料庫可以接受連線 |
 | `volumes: pgdata` | 具名 volume，讓資料庫重啟後資料不遺失 |
-| `${SERVER_PORT_APP:-8080}` | 從 `.env` 讀取 `SERVER_PORT_APP`，如果未設定則使用 8080 |
+| `${SERVER_PORT_APP:-18080}` | 從 `.env` 讀取 `SERVER_PORT_APP`，如果未設定則使用 18080 |
 
 **Volume 的三種模式**：
 
@@ -565,7 +565,7 @@ services:
         APP_NAME: spring-demo-backend
     container_name: spring-demo
     ports:
-      - "${SERVER_PORT_APP:-8080}:8080"
+      - "${SERVER_PORT_APP:-18080}:8080"
     environment:
       - APP_ENV=${APP_ENV}
       - APP_VERSION=${APP_VERSION}
@@ -587,7 +587,7 @@ services:
     build: ./nginx
     container_name: nginx-gateway
     ports:
-      - "80:80"
+      - "28080:80"
     depends_on:
       - app
     restart: unless-stopped
@@ -602,7 +602,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "15432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -618,7 +618,7 @@ services:
     image: redis:7-alpine
     container_name: demo-redis
     ports:
-      - "6379:6379"
+      - "16379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -828,15 +828,15 @@ docker compose ps
 # nginx-gateway    Up
 
 # 5. 測試 Nginx 靜態檔案
-curl http://localhost/
+curl http://localhost:28080/
 # 輸出：HTML 內容
 
 # 6. 測試 API Gateway 代理
-curl http://localhost/api/
+curl http://localhost:28080/api/
 # Hello from Spring Boot!
 
 # 7. 測試資料庫連線
-curl http://localhost/api/db-check
+curl http://localhost:28080/api/db-check
 # {"postgresql": "OK", "redis": "OK (ping=pong)"}
 
 # 8. 如有任一連線失敗，查看日誌
@@ -861,17 +861,17 @@ echo "3. 等待服務就緒..."
 sleep 10
 
 echo "4. 測試首頁..."
-curl -s http://localhost/ | head -5
+curl -s http://localhost:28080/ | head -5
 
 echo "5. 測試 API..."
-curl -s http://localhost/api/
+curl -s http://localhost:28080/api/
 echo ""
 
 echo "6. 測試 Config..."
-curl -s http://localhost/api/config | python3 -m json.tool
+curl -s http://localhost:28080/api/config | python3 -m json.tool
 
 echo "7. 測試 DB 連線..."
-curl -s http://localhost/api/db-check | python3 -m json.tool
+curl -s http://localhost:28080/api/db-check | python3 -m json.tool
 
 echo "8. 直接測試 PostgreSQL（不需要進入 container）..."
 docker exec demo-postgres psql -U authuser -d authdb -c "SELECT 1;"
