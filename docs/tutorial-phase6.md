@@ -214,11 +214,21 @@ docker compose build auth && docker compose up -d --no-deps auth
 
 ### 6.4.2 Rate Limit 測試
 
+**方法一：Web UI**
+
+1. 打開 http://localhost:28080/
+2. 在 Login 表單輸入 `alice` / 任意錯誤密碼，連續送 5 次
+3. 第 6 次會看到按鈕被停用，出現紅色提示「Login locked for 60s」
+4. 「What just happened?」面板會顯示 rate limit 說明
+
+**方法二：curl**
+
 ```bash
 # 連續 5 次錯誤密碼
 for i in $(seq 1 5); do
   curl -s -X POST http://localhost:28080/auth/v1/login \
-    -d "username=alice&password=wrong$i" | python3 -c "import sys;print(sys.stdin.read())"
+    -d "username=alice&password=wrong$i"
+  echo
 done
 
 # 第 6 次 — 應該被擋
@@ -230,14 +240,11 @@ curl -s -X POST http://localhost:28080/auth/v1/login \
 docker compose exec redis redis-cli GET "login_fail:alice"
 # "5"
 
-# 使用正確密碼 — 應清除計數器
+# 解鎖（清除計數器後用正確密碼登入）
+docker compose exec redis redis-cli DEL "login_fail:alice"
 curl -s -X POST http://localhost:28080/auth/v1/login \
   -d "username=alice&password=Str0ng!Pass" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('status'))"
 # ok
-
-# 確認計數器已清除
-docker compose exec redis redis-cli GET "login_fail:alice"
-# (nil)
 ```
 
 ### 6.4.3 Cache-Aside 測試

@@ -170,9 +170,10 @@
                     <label for="login-password">Password</label>
                     <input type="password" id="login-password" placeholder="Str0ng!Pass" required>
                     <div class="btn-group">
-                        <button type="submit" class="btn btn-primary">Login</button>
+                        <button type="submit" class="btn btn-primary" id="login-btn">Login</button>
                         <button type="button" class="btn btn-danger btn-sm" onclick="logout()">Logout</button>
                     </div>
+                    <div id="rate-limit-msg" class="helper" style="display:none;color:#dc3545;"></div>
                 </form>
             </div>
         </div>
@@ -331,35 +332,69 @@
             }
         }
 
+        let loginFails = {};
+
         async function login(event) {
             event.preventDefault();
             const username = document.getElementById('login-username').value.trim();
             const password = document.getElementById('login-password').value;
             if (!username || !password) return;
+
+            const rateMsg = document.getElementById('rate-limit-msg');
+            if (rateMsg.style.display !== 'none' && rateMsg.dataset.username === username) {
+                showInterpretation('warn', 'Rate limited', [
+                    'Too many failed attempts for <strong>' + username + '</strong>.',
+                    'Please wait before trying again.'
+                ]);
+                return;
+            }
+
             const data = await apiPost('/auth/v1/login', { username, password });
             showResponse(data);
             if (data.status === 'ok' && data.access_token) {
                 saveToken(data.access_token);
                 localStorage.setItem('refresh_token', data.refresh_token || '');
+                loginFails[username] = 0;
+                rateMsg.style.display = 'none';
                 setStepState(2, 'done');
                 setStepState(3, 'active');
-                showInterpretation('success', 'JWT + Refresh Token issued', [
-                    'SELECT password FROM users WHERE username = ? &rarr; BCrypt.matches() = true.',
+                const cached = data.from_cache ? ' (from Redis cache)' : ' (from PostgreSQL)';
+                showInterpretation('success', 'JWT + Refresh Token issued' + cached, [
+                    'User data loaded' + cached + '.',
                     '<strong>auth-service</strong> (JwtUtil) created a JWT:',
-                    '&bull; Algorithm: <strong>HMAC-SHA256</strong> (HS256)',
                     '&bull; Claims: <code>jti</code> (UUID), <code>sub</code>=' + username + ', <code>role</code>=USER, <code>iat</code>, <code>exp</code>',
                     '&bull; Access token expires in <strong>15 minutes</strong>',
                     '&bull; Refresh token (opaque UUID) stored in Redis, expires in <strong>7 days</strong>',
                     'The access token is now stored in your browser. Click <strong>Verify</strong> to check it.'
                 ]);
                 setArch('arch-auth', true);
-            } else {
-                showInterpretation('error', 'Login failed', [
-                    data.message || 'Unknown error.',
-                    'Possible causes: (1) User does not exist &mdash; register first.',
-                    '(2) Wrong password &mdash; passwords are compared as plain text in this phase.',
-                    '(3) PostgreSQL is unreachable.'
+            } else if (data.code === 'RATE_LIMITED') {
+                loginFails[username] = (loginFails[username] || 0) + 1;
+                rateMsg.textContent = 'Too many failed attempts. Login locked for 60s.';
+                rateMsg.style.display = 'block';
+                rateMsg.dataset.username = username;
+                document.getElementById('login-btn').disabled = true;
+                setTimeout(() => {
+                    rateMsg.textContent = 'Login unlocked — try again.';
+                    setTimeout(() => { rateMsg.style.display = 'none'; }, 3000);
+                    document.getElementById('login-btn').disabled = false;
+                }, 60000);
+                showInterpretation('error', 'Rate limited (429)', [
+                    '<strong>Redis</strong> <code>login_fail:' + username + '</code> &ge; 5.',
+                    'The auth-service rejected this login attempt.',
+                    'The login button will be re-enabled in 60 seconds.',
+                    'You can also delete the key: <code>docker compose exec redis redis-cli DEL "login_fail:' + username + '"</code>'
                 ]);
+            } else {
+                loginFails[username] = (loginFails[username] || 0) + 1;
+                const count = loginFails[username];
+                const remaining = Math.max(0, 5 - count);
+                showInterpretation('error', 'Login failed (' + count + '/5)', [
+                    data.message || 'Unknown error.',
+                    remaining > 0 ? 'After <strong>5 failures</strong>, rate limiting will kick in.' : 'Rate limiting is now active for <strong>' + username + '</strong>.',
+                    remaining > 0 ? remaining + ' attempt' + (remaining > 1 ? 's' : '') + ' remaining before lockout.' : '',
+                    'Redis key: <code>INCR login_fail:' + username + '</code> with TTL 600s.'
+                ].filter(Boolean));
             }
         }
 
@@ -590,6 +625,9 @@
             document.getElementById('reg-password').value = '';
             document.getElementById('login-username').value = '';
             document.getElementById('login-password').value = '';
+            document.getElementById('rate-limit-msg').style.display = 'none';
+            document.getElementById('login-btn').disabled = false;
+            loginFails = {};
             showResponse('Reset. Start from Register again.');
             showInterpretation(null);
             document.getElementById('demo-btn').textContent = 'Run Demo';
