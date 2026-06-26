@@ -196,32 +196,31 @@ docker compose exec redis redis-cli TTL "user:alice"
                 </form>
             </div>
         </div>
-    </div>
 
-    <!-- Token -->
-    <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-            <h2 style="margin:0;">JWT Token <span class="tag blue">Steps 3-5</span></h2>
-            <div class="btn-group" style="margin:0;">
-                <button class="btn btn-success btn-sm" onclick="verifyToken()">Verify</button>
-                <button class="btn btn-warning btn-sm" onclick="refreshToken()">Refresh</button>
+        <!-- Right: Token + Response + Interpretation -->
+        <div class="col" style="flex: 1;">
+            <!-- Token -->
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <h2 style="margin:0;">JWT Token <span class="tag blue">Steps 3-5</span></h2>
+                    <div class="btn-group" style="margin:0;">
+                        <button class="btn btn-success btn-sm" onclick="verifyToken()">Verify</button>
+                        <button class="btn btn-warning btn-sm" onclick="refreshToken()">Refresh</button>
+                    </div>
+                </div>
+                <p class="helper">The JWT is stored in your browser's <code>localStorage</code>. Use <strong>Verify</strong> to check validity, <strong>Refresh</strong> to get a new access/refresh token pair. Login to get a token, <strong>Logout</strong> (above) to blacklist it in Redis.</p>
+                <div id="token-box" class="token-box"></div>
+                <div id="refresh-token-box" class="token-box" style="display:none;"></div>
+                <div id="token-status" class="helper" style="font-weight:600;"></div>
             </div>
-        </div>
-        <p class="helper">The JWT is stored in your browser's <code>localStorage</code>. Use <strong>Verify</strong> to check validity, <strong>Refresh</strong> to get a new access/refresh token pair. Login to get a token, <strong>Logout</strong> (above) to blacklist it in Redis.</p>
-        <div id="token-box" class="token-box"></div>
-        <div id="refresh-token-box" class="token-box" style="display:none;"></div>
-        <div id="token-status" class="helper" style="font-weight:600;"></div>
-    </div>
 
-    <!-- Response + Interpretation -->
-    <div class="row">
-        <div class="col">
+            <!-- Response -->
             <div class="card">
                 <h2>Response</h2>
                 <pre id="response">Waiting for action...</pre>
             </div>
-        </div>
-        <div class="col">
+
+            <!-- Interpretation -->
             <div class="card">
                 <h2>What just happened?</h2>
                 <div id="interpretation">
