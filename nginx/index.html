@@ -82,6 +82,7 @@
             <span class="arch-box" id="arch-pg">PostgreSQL</span>
             <span class="arch-arrow">&</span>
             <span class="arch-box" id="arch-redis">Redis</span>
+            <button class="btn btn-outline btn-sm" onclick="loadHealth()" style="margin-left:8px;">Health Check</button>
         </div>
     </div>
 
@@ -167,7 +168,7 @@
                     <input type="password" id="login-password" placeholder="Str0ng!Pass" required>
                     <div class="btn-group">
                         <button type="submit" class="btn btn-primary">Login</button>
-                        <button type="button" class="btn btn-outline btn-sm" onclick="loadHealth()">Health Check</button>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="logout()">Logout</button>
                     </div>
                 </form>
             </div>
@@ -178,15 +179,11 @@
     <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <h2 style="margin:0;">JWT Token <span class="tag blue">Steps 3-5</span></h2>
-            <div>
-                <button class="btn btn-success btn-sm" onclick="verifyToken()">Verify</button>
-                <button class="btn btn-danger btn-sm" onclick="logout()">Logout</button>
-                <button class="btn btn-outline btn-sm" onclick="clearToken()">Clear</button>
-            </div>
+            <button class="btn btn-success btn-sm" onclick="verifyToken()">Verify Token</button>
         </div>
-        <p class="helper">The JWT is stored in your browser's <code>localStorage</code>. Use <strong>Verify</strong> to check it against auth-service, or <strong>Logout</strong> to blacklist it in Redis.</p>
+        <p class="helper">The JWT is stored in your browser's <code>localStorage</code>. Use <strong>Verify Token</strong> to check its validity against auth-service. Login to get a token, <strong>Logout</strong> (above) to blacklist it in Redis.</p>
         <div id="token-box" class="token-box"></div>
-        <p class="helper" id="token-helper">No token. Login to get one.</p>
+        <div id="token-status" class="helper" style="font-weight:600;"></div>
     </div>
 
     <!-- Response + Interpretation -->
@@ -212,18 +209,26 @@
         let currentToken = localStorage.getItem('jwt_token') || '';
         let demoRunning = false;
 
-        function saveToken(token) {
+        function saveToken(token, revoked) {
             currentToken = token;
             localStorage.setItem('jwt_token', token);
             const box = document.getElementById('token-box');
-            const helper = document.getElementById('token-helper');
+            const status = document.getElementById('token-status');
             if (token) {
                 box.textContent = token;
                 box.style.display = 'block';
-                helper.textContent = 'Token is set. Use Verify or Logout.';
+                if (revoked) {
+                    box.style.background = '#f8d7da';
+                    box.style.borderColor = '#dc3545';
+                    status.innerHTML = 'Token is <strong>revoked</strong> (blacklisted in Redis). Click <strong>Verify Token</strong> to confirm it is rejected.';
+                } else {
+                    box.style.background = '#fff3cd';
+                    box.style.borderColor = '#ffc107';
+                    status.textContent = 'Token is active. Click Verify Token to check, or Logout to revoke it.';
+                }
             } else {
                 box.style.display = 'none';
-                helper.textContent = 'No token. Login to get one.';
+                status.innerHTML = 'No token. <strong>Login</strong> to get one.';
             }
         }
 
@@ -381,6 +386,7 @@
             } else {
                 setStepState(3, 'active');
                 if (data.message === 'token revoked') {
+                    setStepState(5, 'done');
                     showInterpretation('error', 'Token rejected &mdash; blacklisted', [
                         'The token was found in <strong>Redis</strong> <code>blacklist:&lt;token&gt;</code>.',
                         'This means the token was revoked via <strong>Logout</strong>.',
@@ -414,13 +420,12 @@
             if (data.status === 'ok') {
                 setStepState(4, 'done');
                 setStepState(5, 'active');
-                saveToken('');
+                saveToken(token, true);
                 showInterpretation('warn', 'Token blacklisted in Redis', [
                     'SET blacklist:&lt;token&gt; = "1" &rarr; stored in <strong>Redis</strong>.',
                     'The token is now revoked. Even though it has a valid signature and is not expired,',
                     'the next <code>/auth/verify</code> will reject it because <strong>Redis</strong> has the blacklist key.',
-                    'Try clicking <strong>Step 5</strong> in the guide, or paste the token back and Verify it.',
-                    '(Token was cleared from browser since it is no longer usable.)'
+                    'Click <strong>Verify Token</strong> now to see it fail &mdash; this is step 5 of the guide.'
                 ]);
             } else {
                 showInterpretation('error', 'Logout failed', [data.message || 'Unknown error.']);
@@ -513,13 +518,15 @@
                 headers: { 'Authorization': 'Bearer ' + getToken() }
             });
             const revokedToken = getToken();
-            saveToken('');
+            saveToken(revokedToken, true);
+            showInterpretation('warn', 'Demo: Token revoked in Redis', [
+                'Token has been blacklisted. Now verifying again to confirm rejection...'
+            ]);
             setStepState(4, 'done');
             setStepState(5, 'active');
 
             // Step 5: Verify should fail
-            await sleep(800);
-            saveToken(revokedToken);
+            await sleep(1000);
             const failData = await apiGet('/auth/verify', revokedToken);
             showResponse(failData);
             if (failData.message === 'token revoked') {
@@ -553,7 +560,7 @@
             const box = document.getElementById('token-box');
             box.textContent = currentToken;
             box.style.display = 'block';
-            document.getElementById('token-helper').textContent = 'Token restored from previous session.';
+            document.getElementById('token-status').textContent = 'Token restored from previous session.';
         }
         loadStatus();
     </script>
