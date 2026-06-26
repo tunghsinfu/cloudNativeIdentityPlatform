@@ -146,7 +146,7 @@
                             <div class="step-title">Explore: Rate Limit &amp; Cache</div>
                             <div class="step-desc">Trigger 5 failed logins &rarr; 429 lockout &bull; See Redis cache on success</div>
                             <div class="step-detail">
-                                <strong>Rate Limit</strong> &mdash; enter wrong password 5+ times in Login. Watch the fail counter (<span class="tag red">N/5</span>) next to the button. On the 6th attempt (<code>login_fail:{user}</code> reaches 5), all logins are blocked with HTTP 429 for 600s.<br>
+                                <strong>Rate Limit</strong> &mdash; enter wrong password 4 times (counter <span class="tag red">N/5</span>). The 5th attempt triggers <strong>429</strong> and the login button is disabled for 60s. Server uses <strong>INCR-first</strong>: INCR then check &ge; 5.<br>
                                 <strong>Cache-Aside</strong> &mdash; after login succeeds, the interpretation panel shows <em>(from Redis cache)</em> or <em>(from PostgreSQL)</em>. The cache is stored as JSON in Redis key <code>user:{username}</code> with TTL 300s.<br>
                                 <strong>Redis commands</strong> to inspect manually:
                                 <code style="display:block;margin-top:4px;background:#f8f9fa;padding:6px;border-radius:4px;">
@@ -627,48 +627,48 @@ docker compose exec redis redis-cli TTL "user:alice"
             }
             saveToken(revokedToken, true);
 
-            // Step 6: Rate Limit + Cache-Aside demo
+            // Step 6: Rate Limit demo
             await sleep(1000);
             setStepState(6, 'active');
-            showInterpretation('info', 'Demo: Testing Rate Limit (5 wrong attempts)...', [
-                'Sending 5 login attempts with wrong password for <strong>' + username + '</strong>.',
-                'Each attempt increments Redis <code>login_fail:' + username + '</code>.'
+            showInterpretation('info', 'Demo: Testing Rate Limit (wrong1-wrong4 + wrong5 blocked)...', [
+                'Sending 4 wrong passwords (401), then wrong5 triggers rate limit (429).',
+                'Server now uses <strong>INCR-first</strong>: INCR <code>login_fail:' + username + '</code> then check &ge; 5.'
             ]);
-            for (let i = 1; i <= 6; i++) {
+            for (let i = 1; i <= 4; i++) {
                 await sleep(200);
                 await apiPost('/auth/v1/login', { username, password: 'wrong' + i });
             }
-            // wrong7 — should be blocked
+            // 5th attempt — blocked
             await sleep(200);
-            const rateBlocked = await apiPost('/auth/v1/login', { username, password: 'wrong7' });
+            const rateBlocked = await apiPost('/auth/v1/login', { username, password: 'wrong5' });
             showResponse(rateBlocked);
             const rateLimited = rateBlocked.code === 'RATE_LIMITED';
-            showInterpretation(rateLimited ? 'warn' : 'info', 'Demo: Rate limit ' + (rateLimited ? 'confirmed (429)' : 'not triggered'), [
-                rateLimited ? '7th attempt returned <strong>RATE_LIMITED</strong> (429) — rate limit active.' : 'Unexpected: ' + JSON.stringify(rateBlocked),
-                'Redis key <code>login_fail:' + username + '</code> reached 5 (TTL 600s).',
-                'All subsequent logins for <strong>' + username + '</strong> will be blocked until the TTL expires.',
-                'Try it: the correct password below will also be rejected.'
-            ]);
-            // Confirm rate limit persists
-            await sleep(600);
-            document.getElementById('login-username').value = username;
-            document.getElementById('login-password').value = password;
-            const loginAgain = await apiPost('/auth/v1/login', { username, password });
-            showResponse(loginAgain);
-            const alsoBlocked = loginAgain.code === 'RATE_LIMITED';
+            // Show the rate limit message in the UI just like the login() function does
+            if (rateLimited) {
+                const rateMsg = document.getElementById('rate-limit-msg');
+                rateMsg.textContent = 'Too many failed attempts. Login locked for 60s.';
+                rateMsg.style.display = 'block';
+                rateMsg.dataset.username = username;
+                document.getElementById('login-btn').disabled = true;
+                setTimeout(() => {
+                    rateMsg.textContent = 'Login unlocked — try again.';
+                    setTimeout(() => { rateMsg.style.display = 'none'; }, 3000);
+                    document.getElementById('login-btn').disabled = false;
+                }, 60000);
+            }
             setStepState(6, 'done');
-            showInterpretation(alsoBlocked ? 'warn' : 'success', 'Demo complete: Rate limit ' + (alsoBlocked ? 'persists' : 'cleared'), [
-                'Correct password login also returned <strong>' + (alsoBlocked ? 'RATE_LIMITED (429)' : 'OK') + '</strong>.',
-                alsoBlocked ? 'The <code>login_fail:' + username + '</code> key blocks ALL logins for 600s.' : '',
+            showInterpretation(rateLimited ? 'warn' : 'info', 'Demo complete: Rate limit ' + (rateLimited ? 'confirmed (429)' : 'unexpected'), [
+                rateLimited ? 'wrong5: INCR &rarr; 5, 5 &ge; 5 &rarr; <strong>RATE_LIMITED</strong> (429).' : 'Not rate limited: ' + JSON.stringify(rateBlocked),
+                'Redis key <code>login_fail:' + username + '</code> is now 5 (TTL 600s).',
+                '<strong>Rate Limit flow (INCR-first):</strong>',
+                'wrong1 &rarr; INCR 1, 1&ge;5? No &rarr; 401',
+                'wrong2 &rarr; INCR 2, 2&ge;5? No &rarr; 401',
+                'wrong3 &rarr; INCR 3, 3&ge;5? No &rarr; 401',
+                'wrong4 &rarr; INCR 4, 4&ge;5? No &rarr; 401',
+                '<strong>wrong5 &rarr; INCR 5, 5&ge;5? YES &rarr; 429</strong>',
                 '',
-                '<strong>Rate Limit flow:</strong>',
-                'wrong1-wrong4 &rarr; 401 (counter 1-4)',
-                'wrong5 &rarr; 401 (counter 4→5, but check passes because GET saw 4)',
-                'wrong6 &rarr; 429 (counter=5, check fails)',
-                'wrong7 &rarr; 429 (still blocked)',
-                'Correct password &rarr; 429 (still blocked, TTL 600s)',
-                '',
-                'To unlock: <code>docker compose exec redis redis-cli DEL "login_fail:' + username + '"</code>',
+                'Login button is now disabled for 60s.',
+                'To unlock early: <code>docker compose exec redis redis-cli DEL "login_fail:' + username + '"</code>',
                 'Click <strong>Reset</strong> to start over.'
             ]);
 

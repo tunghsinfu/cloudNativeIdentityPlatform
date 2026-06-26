@@ -49,20 +49,21 @@ public class AuthController {
 
     @PostMapping("/login")
     public Map<String, Object> login(@RequestParam String username,
-                                     @RequestParam String password) {
+                                      @RequestParam String password) {
         String rateKey = "login_fail:" + username;
-        String val = redis.opsForValue().get(rateKey);
-        if (val != null && Integer.parseInt(val) >= 5) {
+        Long count = redis.opsForValue().increment(rateKey);
+        if (count == 1) {
+            redis.expire(rateKey, Duration.ofSeconds(600));
+        }
+        if (count >= 5) {
             throw new RateLimitExceededException("too many login attempts, try again later");
         }
         var userOpt = userRepository.findByUsername(username);
         if (userOpt.isEmpty()) {
-            incrementRate(rateKey);
             throw new UsernameNotFoundException("invalid username or password");
         }
         var user = userOpt.get();
         if (!passwordEncoder.matches(password, user.password())) {
-            incrementRate(rateKey);
             throw new BadCredentialsException("invalid username or password");
         }
         redis.delete(rateKey);
@@ -77,13 +78,6 @@ public class AuthController {
                 "access_token", accessToken,
                 "refresh_token", refreshToken,
                 "expires_in", jwtUtil.getAccessTokenExpMs() / 1000);
-    }
-
-    private void incrementRate(String key) {
-        Long count = redis.opsForValue().increment(key);
-        if (count != null && count == 1) {
-            redis.expire(key, Duration.ofSeconds(600));
-        }
     }
 
     @GetMapping("/verify")
