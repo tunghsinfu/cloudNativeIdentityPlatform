@@ -205,55 +205,170 @@ EOF
 
 Alpine 版本基於 `musl libc` + BusyBox，映像極小。對 Nginx 這種純反向代理，Alpine 是標準選擇。
 
-### 2.2.3 建立前端測試頁面
+### 2.2.3 建立互動式前端頁面
+
+建立一個可操作的 WEB UI，直接從瀏覽器呼叫後端 API，不需要 curl。
 
 ```bash
-cat > nginx/index.html << 'EOF'
+cat > nginx/index.html << 'ENDOFFILE'
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Microservices Demo</title>
+    <title>Cloud Native Identity Platform</title>
     <style>
-        body { font-family: sans-serif; max-width: 700px; margin: 50px auto; text-align: center; }
-        h1 { color: #333; }
-        .card { margin-top: 20px; padding: 20px; background: #f0f8ff; border-radius: 8px; text-align: left; }
-        .card h3 { margin-top: 0; }
-        pre { background: #eee; padding: 10px; border-radius: 4px; overflow-x: auto; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, system-ui, sans-serif; max-width: 960px; margin: 0 auto; padding: 16px; background: #f5f5f5; color: #333; }
+        h1 { text-align: center; color: #1a1a2e; margin-bottom: 16px; font-size: 1.5rem; }
+        h2 { font-size: 1rem; margin: 0 0 8px 0; color: #1a1a2e; }
+        .card { background: white; border-radius: 8px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .btn { padding: 7px 14px; border: none; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+        .btn-primary { background: #4a90d9; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-outline { background: transparent; color: #666; border: 1px solid #ddd; }
+        .btn-group { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+        .btn-sm { padding: 4px 10px; font-size: 0.78rem; }
+        pre { background: #f8f9fa; border: 1px solid #eee; border-radius: 6px; padding: 10px; font-size: 0.8rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+        .arch-diagram { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px; font-size: 0.75rem; flex-wrap: wrap; }
+        .arch-box { padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 0.72rem; }
+        .arch-box.up { background: #d4edda; border: 1px solid #c3e6cb; }
+        .arch-box.down { background: #f8d7da; border: 1px solid #f5c6cb; }
+        .arch-arrow { color: #999; font-size: 0.9rem; }
+        .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; }
+        .tag.green { background: #d1e7dd; color: #0f5132; }
+        .tag.blue { background: #cfe2ff; color: #084298; }
+        .tag.red { background: #f8d7da; color: #842029; }
+        .tag.yellow { background: #fff3cd; color: #664d03; }
     </style>
 </head>
 <body>
-    <h1>Microservices Demo</h1>
-    <p>Welcome to the microservices demo!</p>
-    <div class="card">
-        <h3>Backend</h3>
-        <p><span id="backend-status">checking...</span></p>
+    <h1>Cloud Native Identity Platform</h1>
+    <div class="card" style="padding:10px;">
+        <div class="arch-diagram">
+            <span class="arch-box" id="arch-browser">Browser</span>
+            <span class="arch-arrow">&rarr;</span>
+            <span class="arch-box" id="arch-nginx">Nginx :80</span>
+            <span class="arch-arrow">&rarr;</span>
+            <span class="arch-box" id="arch-auth">auth-service :8081</span>
+            <span class="arch-arrow">&rarr;</span>
+            <span class="arch-box" id="arch-pg">PostgreSQL</span>
+            <span class="arch-arrow">&</span>
+            <span class="arch-box" id="arch-redis">Redis</span>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col">
+            <div class="card">
+                <h2>Register</h2>
+                <form id="register-form" onsubmit="return register(event)">
+                    <input type="text" id="reg-username" placeholder="Username" required>
+                    <input type="password" id="reg-password" placeholder="Password" required>
+                    <button type="submit" class="btn btn-success">Register</button>
+                </form>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card">
+                <h2>Login</h2>
+                <form id="login-form" onsubmit="return login(event)">
+                    <input type="text" id="login-username" placeholder="Username" required>
+                    <input type="password" id="login-password" placeholder="Password" required>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="logout()">Logout</button>
+                </form>
+            </div>
+        </div>
     </div>
     <div class="card">
-        <h3>Config (Env & Secrets)</h3>
-        <pre id="config-output">loading...</pre>
+        <h2>JWT Token</h2>
+        <div id="token-box" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px;font-size:0.75rem;word-break:break-all;margin:6px 0;font-family:monospace;"></div>
+        <div id="token-status" class="helper"></div>
+        <button class="btn btn-success btn-sm" onclick="verifyToken()">Verify Token</button>
+    </div>
+    <div class="card">
+        <h2>Response</h2>
+        <pre id="response">Waiting for action...</pre>
     </div>
     <script>
-        fetch('/api/')
-            .then(r => r.text())
-            .then(t => document.getElementById('backend-status').textContent = t)
-            .catch(() => document.getElementById('backend-status').textContent = 'unreachable');
-
-        fetch('/api/config')
-            .then(r => r.json())
-            .then(d => document.getElementById('config-output').textContent = JSON.stringify(d, null, 2))
-            .catch(() => document.getElementById('config-output').textContent = 'unreachable');
+        let currentToken = localStorage.getItem('jwt_token') || '';
+        function saveToken(token, revoked) {
+            currentToken = token; localStorage.setItem('jwt_token', token);
+            const box = document.getElementById('token-box');
+            const status = document.getElementById('token-status');
+            if (token) {
+                box.textContent = token; box.style.display = 'block';
+                if (revoked) { box.style.background = '#f8d7da'; box.style.borderColor = '#dc3545'; status.innerHTML = 'Token revoked.'; }
+                else { box.style.background = '#fff3cd'; box.style.borderColor = '#ffc107'; status.textContent = 'Token active.'; }
+            } else { box.style.display = 'none'; status.innerHTML = 'No token.'; }
+        }
+        function getToken() { return currentToken; }
+        async function apiPost(url, data) {
+            const params = new URLSearchParams(data);
+            return (await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params.toString() })).json();
+        }
+        async function apiGet(url, token) {
+            return (await fetch(url, { headers: token ? { 'Authorization': 'Bearer ' + token } : {} })).json();
+        }
+        function showResponse(data) { document.getElementById('response').textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2); }
+        async function register(e) { e.preventDefault();
+            const data = await apiPost('/auth/register', { username: document.getElementById('reg-username').value, password: document.getElementById('reg-password').value });
+            showResponse(data); if (data.status === 'ok') { document.getElementById('login-username').value = document.getElementById('reg-username').value; document.getElementById('reg-username').value = ''; document.getElementById('reg-password').value = ''; }
+        }
+        async function login(e) { e.preventDefault();
+            const data = await apiPost('/auth/login', { username: document.getElementById('login-username').value, password: document.getElementById('login-password').value });
+            showResponse(data); if (data.status === 'ok' && data.token) saveToken(data.token);
+        }
+        async function verifyToken() {
+            if (!getToken()) { showResponse('No token.'); return; }
+            showResponse(await apiGet('/auth/verify', getToken()));
+        }
+        async function logout() {
+            const token = getToken(); if (!token) { showResponse('No token.'); return; }
+            const data = await (await fetch('/auth/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } })).json();
+            showResponse(data); if (data.status === 'ok') saveToken(token, true); }
+        if (currentToken) { const b = document.getElementById('token-box'); b.textContent = currentToken; b.style.display = 'block'; document.getElementById('token-status').textContent = 'Token restored.'; }
     </script>
 </body>
 </html>
-EOF
+ENDOFFILE
 ```
 
-**前端邏輯**：
-- `/api/` — 呼叫後端 Spring Boot 的 `GET /`，顯示 "Hello from Spring Boot!"
-- `/api/config` — 呼叫後端 `GET /config`，顯示環境變數設定
-- 如果後端不可用，則顯示 "unreachable"
+**頁面架構**：
+
+```
+┌─────────────────────────────────────────────────┐
+│  Browser → Nginx → auth-service → PG & Redis   │  架構狀態列（綠=正常）
+├────────────────────┬────────────────────────────┤
+│  Register (Step 1) │  Login (Step 2)            │  並列表單
+│                    │  [Login] [Logout]          │
+├────────────────────┴────────────────────────────┤
+│  JWT Token  [Verify Token]                      │  token 顯示區
+├─────────────────────────────────────────────────┤
+│  Response / What just happened?                 │  即時回應
+└─────────────────────────────────────────────────┘
+```
+
+**各區域功能**：
+
+| 區域 | 功能 | 啟用時機 |
+|------|------|---------|
+| 架構狀態列 | 顯示各服務連線狀態（綠色=正常） | Phase 2（app/nginx/PG/Redis 啟動後）|
+| Register | 建立使用者帳號（存入 PostgreSQL） | **Phase 3**（需 auth-service）|
+| Login | 登入取得 JWT token | **Phase 3**（需 auth-service）|
+| Logout | 將 token 加入 Redis blacklist | **Phase 3**（需 auth-service）|
+| Verify Token | 驗證 token 是否有效 | **Phase 3**（需 auth-service）|
+| Response | 顯示 API 回傳原始 JSON | 全部階段 |
+
+**開發者模式**：開發階段可直接用 `docker cp` 更新內容，不需重 build Nginx：
+
+```bash
+# 修改 index.html 後即時套用
+docker cp nginx/index.html nginx-gateway:/usr/share/nginx/html/index.html
+```
+
+若已掛載 volume 在開發環境，則直接存檔後重整瀏覽器即可。
 
 ### 2.2.4 更新 docker-compose.yml 加入 Nginx
 
@@ -308,17 +423,20 @@ EOF
 ```bash
 docker compose up -d --build
 
-# 1. Nginx 靜態檔案
-curl http://localhost/
-# 輸出：HTML 內容（index.html）
+# 1. 開啟瀏覽器 http://localhost/
+#    應該看到互動式頁面，架構狀態列顯示各服務狀態
 
-# 2. 透過 Nginx 代理到後端
+# 2. 透過 curl 確認後端可達
 curl http://localhost/api/
 # 輸出：Hello from Spring Boot!
 
 # 3. 透過 Nginx 取得 config
 curl http://localhost/api/config
 # 輸出：{ "service": "spring-demo-backend", ... }
+
+# 4. 直接測試 /api/ 端點確保代理正確
+curl http://localhost/api/hello
+# 預期：404（因為 Spring Boot 沒有 /hello，但 Nginx 代理正確轉發）
 
 docker compose down
 ```
