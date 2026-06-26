@@ -63,26 +63,34 @@ java -Djarmode=layertools -jar app.jar extract
 # 產生：dependencies/  spring-boot-loader/  snapshot-dependencies/  application/
 ```
 
-### Dockerfile 用法
+### Dockerfile 應用
+
+完整 Dockerfile：
 
 ```dockerfile
-# Stage 2: 解壓層
-FROM eclipse-temurin:21-jre-alpine AS extractor
+FROM maven:3.9-eclipse-temurin-21-alpine AS builder
+WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+FROM eclipse-temurin:21-jre-alpine
+
+ARG APP_NAME=unknown
+ENV APP_NAME=${APP_NAME}
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
 WORKDIR /app
 COPY --from=builder /app/target/*.jar app.jar
-RUN java -Djarmode=layertools -jar app.jar extract
 
-# Stage 3: Run
-FROM eclipse-temurin:21-jre-alpine
-...
-COPY --from=extractor /app/dependencies/ ./
-COPY --from=extractor /app/spring-boot-loader/ ./
-COPY --from=extractor /app/snapshot-dependencies/ ./
-COPY --from=extractor /app/application/ ./
-ENTRYPOINT ["java", "org.springframework.boot.loader.JarLauncher"]
+EXPOSE 8081
+USER appuser
+ENTRYPOINT ["java", "-jar", "app.jar"]
 ```
 
-`COPY` 指令的順序代表 Docker layer 的順序。由於 `dependencies/` 幾乎不變，大多數 build 可以直接使用快取層，大幅加速。
+目前的實作保留 `java -jar` 的方式執行，以保證最大相容性。Layered JAR 在 Spring Boot 3.3+ 中 loader class 的 package 有變動，要整合進 Docker 層快取需要對應版本調整，屬於可追加的進階優化（詳見 Spring Boot 官方文件 [Container Images](https://docs.spring.io/spring-boot/reference/packaging/container-images.html)）。
 
 ## 5.3 Graceful Shutdown
 
@@ -215,16 +223,18 @@ Actuator 會自動加上：
 - `GET /actuator/health` — 服務存活檢查（回傳 `{"status":"UP"}`）
 - `GET /actuator/info` — 程式資訊
 
-> **安全**：Phase 4 的 SecurityConfig 已經保護所有 `/auth/v1/**` 路徑，但 Actuator 的 endpoint 在 `/actuator/*` 路徑。雖然這個路徑不在 Spring Security 的保護範圍內，但 `/actuator/health` 回傳的資訊只有 `{"status":"UP"}`，沒有敏感資料。正式環境應搭配 `management.endpoints.web.exposure.include` 限制暴露的 endpoint。
+> **安全注意**：Phase 4 的 SecurityConfig 使用 `.anyRequest().authenticated()`，所以 `/actuator/*` 同樣需要認證。我們在 `SecurityConfig.java` 的 `permitAll()` 清單中加入了 `/actuator/health` 與 `/actuator/info`，讓健康檢查不需要 token。正式環境可視需求移除或加上 IP 限制。
 
 ## 5.8 完整變更摘要
 
 | 檔案 | 變更內容 |
 |------|---------|
 | `auth-service/pom.xml` | +`spring-boot-starter-actuator` |
-| `auth-service/Dockerfile` | 3-stage build（builder → extractor → run）、non-root user |
+| `auth-service/Dockerfile` | non-root user (appuser) |
 | `auth-service/src/main/resources/application.properties` | graceful shutdown、HikariCP、actuator |
 | `auth-service/src/main/java/.../config/CorsConfig.java` | 新增，CORS 設定 |
+| `auth-service/src/main/java/.../config/SecurityConfig.java` | `permitAll()` 加入 `/actuator/health`、`/actuator/info` |
+| `nginx/nginx.conf` | 新增 `location /actuator/` → `auth:8081` |
 | `docker-compose.yml` | deploy.resources.limits 給 app / auth / nginx |
 
 ## 5.9 驗證步驟
@@ -244,6 +254,18 @@ docker compose exec auth id
 ```
 
 ### 5.9.3 Actuator
+
+Actuator 需要 Nginx 路由才能從 `localhost:28080` 存取。確認 `nginx/nginx.conf` 包含：
+
+```nginx
+location /actuator/ {
+    proxy_pass http://auth:8081;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+```
+
+之後
 
 ```bash
 curl http://localhost:28080/actuator/health
