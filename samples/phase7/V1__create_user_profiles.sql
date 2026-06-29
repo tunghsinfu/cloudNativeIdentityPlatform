@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    display_name VARCHAR(200),
+    email VARCHAR(255),
+    avatar_url VARCHAR(500),
+    bio TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

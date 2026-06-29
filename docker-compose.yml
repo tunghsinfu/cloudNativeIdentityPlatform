@@ -60,6 +60,34 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  user:
+    build:
+      context: ./user-service
+      args:
+        APP_NAME: user-service
+    container_name: user-service
+    ports:
+      - "${SERVER_PORT_USER:-18082}:8082"
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - demo-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
   nginx:
     build: ./nginx
     container_name: nginx-gateway
@@ -68,6 +96,7 @@ services:
     depends_on:
       - app
       - auth
+      - user
     restart: unless-stopped
     networks:
       - demo-net
