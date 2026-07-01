@@ -77,7 +77,9 @@
             <span class="arch-arrow">&rarr;</span>
             <span class="arch-box" id="arch-nginx">Nginx :80</span>
             <span class="arch-arrow">&rarr;</span>
-            <span class="arch-box" id="arch-auth">auth-service :8081</span>
+            <span class="arch-box" id="arch-auth">auth :8081</span>
+            <span class="arch-arrow">&thinsp;</span>
+            <span class="arch-box" id="arch-user">user :8082</span>
             <span class="arch-arrow">&rarr;</span>
             <span class="arch-box" id="arch-pg">PostgreSQL</span>
             <span class="arch-arrow">&</span>
@@ -157,6 +159,19 @@ docker compose exec redis redis-cli TTL "user:alice"
                             </div>
                         </div>
                     </div>
+                    <!-- Phase 7: User Profile -->
+                    <div class="step" id="step-7" onclick="scrollToForm('profile')">
+                        <div class="step-num">7</div>
+                        <div class="step-content">
+                            <div class="step-title">Manage User Profile</div>
+                            <div class="step-desc">Create, read &amp; update profile via user-service <span class="tag blue">JWT Required</span></div>
+                            <div class="step-detail">
+                                <strong>Create / Update</strong> &mdash; <code>POST /user/v1/profile</code> with form params <code>displayName</code>, <code>email</code>, <code>avatarUrl</code>, <code>bio</code>. The <strong>user-service</strong> validates the JWT (shared <code>$JWT_SECRET</code> with auth-service), extracts <code>username</code> from the token, and upserts into the <code>user_profiles</code> table in PostgreSQL.<br>
+                                <strong>Read</strong> &mdash; <code>GET /user/v1/profile</code> returns the current user's profile as JSON. Both endpoints require a valid Bearer token. user-service <strong>does not</strong> check Redis blacklist (only auth-service does), so a revoked token can still access user-service until it expires.<br>
+                                <strong>DB schema</strong> &mdash; <code>user_profiles</code> table: <code>id</code>, <code>username</code> (unique), <code>display_name</code>, <code>email</code>, <code>avatar_url</code>, <code>bio</code>, <code>created_at</code>, <code>updated_at</code>. Managed via Flyway migration <code>V1__create_user_profiles.sql</code>.
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -193,6 +208,26 @@ docker compose exec redis redis-cli TTL "user:alice"
                         <span id="fail-counter" class="tag red" style="display:none;align-self:center;"></span>
                     </div>
                     <div id="rate-limit-msg" class="helper" style="display:none;color:#dc3545;"></div>
+                </form>
+            </div>
+
+            <!-- User Profile -->
+            <div class="card" id="form-profile">
+                <h2>User Profile <span class="tag blue">Step 7</span></h2>
+                <p class="helper">Manage your user profile via <strong>user-service</strong> (port 8082). Requires a valid JWT (login first). Token is verified using the shared <code>$JWT_SECRET</code> between auth-service and user-service.</p>
+                <form id="profile-form" onsubmit="return createOrUpdateProfile(event)">
+                    <label for="prof-display-name">Display Name</label>
+                    <input type="text" id="prof-display-name" placeholder="Alice">
+                    <label for="prof-email">Email</label>
+                    <input type="text" id="prof-email" placeholder="alice@example.com">
+                    <label for="prof-avatar">Avatar URL</label>
+                    <input type="text" id="prof-avatar" placeholder="https://example.com/avatar.png">
+                    <label for="prof-bio">Bio</label>
+                    <input type="text" id="prof-bio" placeholder="Hello, I am Alice!">
+                    <div class="btn-group">
+                        <button type="submit" class="btn btn-success">Save Profile</button>
+                        <button type="button" class="btn btn-primary" onclick="getProfile()">Get Profile</button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -268,12 +303,14 @@ docker compose exec redis redis-cli TTL "user:alice"
         function getToken() { return currentToken; }
 
         // === API ===
-        async function apiPost(url, data) {
+        async function apiPost(url, data, token) {
             const params = new URLSearchParams();
             for (const [k, v] of Object.entries(data)) params.append(k, v);
+            const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+            if (token) headers['Authorization'] = 'Bearer ' + token;
             const res = await fetch(url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                headers,
                 body: params.toString()
             });
             return res.json();
@@ -316,7 +353,7 @@ docker compose exec redis redis-cli TTL "user:alice"
         }
 
         function resetSteps() {
-            for (let i = 1; i <= 6; i++) {
+            for (let i = 1; i <= 7; i++) {
                 document.getElementById('step-' + i).className = 'step';
             }
         }
@@ -527,6 +564,73 @@ docker compose exec redis redis-cli TTL "user:alice"
             }
         }
 
+        // === Phase 7: User Profile ===
+        async function getProfile() {
+            const token = getToken();
+            if (!token) {
+                showResponse('No token. Login first.');
+                showInterpretation('warn', 'No token available', [
+                    'You need to <strong>Login</strong> first to get a JWT token.',
+                    'The profile endpoints require a valid Bearer token.'
+                ]);
+                return;
+            }
+            const data = await apiGet('/user/v1/profile', token);
+            showResponse(data);
+            if (data.id) {
+                document.getElementById('prof-display-name').value = data.displayName || '';
+                document.getElementById('prof-email').value = data.email || '';
+                document.getElementById('prof-avatar').value = data.avatarUrl || '';
+                document.getElementById('prof-bio').value = data.bio || '';
+                setArch('arch-user', true);
+                showInterpretation('success', 'Profile loaded from PostgreSQL', [
+                    '<strong>user-service</strong> (UserController) received GET /user/v1/profile.',
+                    'The JWT was validated using the shared secret (no Redis blacklist check).',
+                    'Username <strong>' + data.username + '</strong> extracted from token <code>sub</code> claim.',
+                    'SELECT from <code>user_profiles</code> WHERE username = \'' + data.username + '\'',
+                    'Fields: displayName=' + (data.displayName || '—') + ', email=' + (data.email || '—') + ', bio=' + (data.bio || '—')
+                ]);
+            } else {
+                showInterpretation('error', 'Profile not found', [
+                    data.message || 'Unknown error.',
+                    'If you haven\'t created a profile yet, use <strong>Save Profile</strong> to create one.',
+                    'GET /user/v1/profile returns 404 when no profile exists for the user.'
+                ]);
+            }
+        }
+
+        async function createOrUpdateProfile(event) {
+            event.preventDefault();
+            const token = getToken();
+            if (!token) {
+                showResponse('No token. Login first.');
+                showInterpretation('warn', 'No token available', [
+                    'You need to <strong>Login</strong> first to get a JWT token.'
+                ]);
+                return;
+            }
+            const displayName = document.getElementById('prof-display-name').value.trim();
+            const email = document.getElementById('prof-email').value.trim();
+            const avatarUrl = document.getElementById('prof-avatar').value.trim();
+            const bio = document.getElementById('prof-bio').value.trim();
+            const data = await apiPost('/user/v1/profile', { displayName, email, avatarUrl, bio }, token);
+            showResponse(data);
+            if (data.status === 'ok') {
+                setStepState(7, 'done');
+                setArch('arch-user', true);
+                const action = data.message.includes('created') ? 'created' : 'updated';
+                showInterpretation('success', 'Profile ' + action + ' in PostgreSQL', [
+                    '<strong>user-service</strong> (UserController) received POST /user/v1/profile.',
+                    'JWT validated &rarr; username extracted &rarr; ' + (action === 'created' ? 'INSERT' : 'UPDATE') + ' on <code>user_profiles</code>.',
+                    'Display Name: ' + (displayName || '—'),
+                    'Email: ' + (email || '—'),
+                    'Click <strong>Get Profile</strong> to verify the saved data.'
+                ]);
+            } else {
+                showInterpretation('error', 'Profile save failed', [data.message || 'Unknown error.']);
+            }
+        }
+
         async function loadHealth() {
             const data = await apiGet('/auth/v1/health');
             showResponse(data);
@@ -548,6 +652,10 @@ docker compose exec redis redis-cli TTL "user:alice"
                 const d = await (await fetch('/api/db-check')).json();
                 setArch('arch-pg', d.postgresql === 'OK');
                 setArch('arch-redis', d.redis.startsWith('OK'));
+            } catch {}
+            try {
+                const h = await (await fetch('/user/v1/health')).json();
+                setArch('arch-user', h.status === 'ok');
             } catch {}
         }
 
@@ -594,8 +702,26 @@ docker compose exec redis redis-cli TTL "user:alice"
                 showInterpretation('success', 'Demo: Token verified successfully', [
                     'Username: <strong>' + verifyData.username + '</strong>',
                     'All 3 checks passed (signature, expiration, blacklist).',
+                    'Now creating a user profile...'
+                ]);
+            }
+
+            // Profile: Create
+            await sleep(800);
+            setStepState(7, 'active');
+            const profData = await apiPost('/user/v1/profile',
+                { displayName: 'Demo User', email: username + '@demo.com', bio: 'Created by demo' },
+                getToken());
+            showResponse(profData);
+            if (profData.status === 'ok') {
+                setStepState(7, 'done');
+                showInterpretation('success', 'Demo: Profile ' + (profData.message.includes('created') ? 'created' : 'updated'), [
+                    '<strong>user-service</strong> processed the POST /user/v1/profile request.',
+                    'JWT was validated using the shared secret (no Redis blacklist check).',
+                    'Username <strong>' + username + '</strong> extracted from token &rarr; INSERT into <code>user_profiles</code>.',
                     'Proceeding to logout...'
                 ]);
+                setArch('arch-user', true);
             }
 
             // Step 4: Logout
@@ -696,6 +822,10 @@ docker compose exec redis redis-cli TTL "user:alice"
             document.getElementById('login-password').value = '';
             document.getElementById('rate-limit-msg').style.display = 'none';
             document.getElementById('login-btn').disabled = false;
+            document.getElementById('prof-display-name').value = '';
+            document.getElementById('prof-email').value = '';
+            document.getElementById('prof-avatar').value = '';
+            document.getElementById('prof-bio').value = '';
             document.getElementById('fail-counter').style.display = 'none';
             loginFails = {};
             showResponse('Reset. Start from Register again.');
